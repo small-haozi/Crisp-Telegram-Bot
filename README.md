@@ -53,3 +53,13 @@ python3 bot.py
 6. 需要Production Key，点击 Ask a production token，再点击Add a Scope。
 7. 需要 2 条read和write权限：`website:conversation:sessions` 和 `website:conversation:messages`
 8. 保存后即可获得ID和Key，此时点击右上角 Install Plugin on Website 即可。
+
+
+```
+cp bot.service /etc/systemd/system/bot.service
+sudo systemctl daemon-reload
+sudo systemctl enable bot.service
+sudo systemctl start bot.service
+sudo systemctl status bot.service
+```
+
