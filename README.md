@@ -19,7 +19,7 @@ Python 版本需求 >= 3.9
 ## 常规使用
 ```
 # apt install git 如果你没有git的话
-git clone https://github.com/DyAxy/Crisp-Telegram-Bot.git
+git clone https://github.com/small-haozi/Crisp-Telegram-Bot.git
 # 进程常驻可参考 screen 或 nohup 或 systemctl
 # 你需要安装好 pip3 的包管理
 cd Crisp-Telegram-Bot
