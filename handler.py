@@ -1,4 +1,3 @@
-
 import bot
 import json
 import base64
@@ -68,6 +67,12 @@ async def createSession(data):
     else:
         try:
             await bot.edit_message_text(metas,groupId,session['messageId'])
+            # 保留两个按钮
+            await bot.edit_message_reply_markup(
+                chat_id=groupId,
+                message_id=session['messageId'],
+                reply_markup=changeButton(sessionId, session.get("enableAI", False))
+            )
         except Exception as error:
             print(error)
 
@@ -155,6 +160,7 @@ async def messageForward(data):
     await createSession(data)
     await sendMessage(data)
 
+
 # Meow!
 def getCrispConnectEndpoints():
     url = "https://api.crisp.chat/v1/plugin/connect/endpoints"
@@ -178,4 +184,4 @@ async def exec(context: ContextTypes.DEFAULT_TYPE):
         transports="websocket",
         wait_timeout=10,
     )
-    await sio.wait()
+    await sio.wait() 
