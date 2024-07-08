@@ -87,8 +87,48 @@ async def sendMessage(data):
     )
 
     if data["type"] == "text":
+        # 检查消息内容是否为 111 或 222
+        if data["content"] == '111' or data["content"] == '222':
+            session["enableAI"] = (data["content"] == '222')
+            await bot.edit_message_reply_markup(
+                chat_id=groupId,
+                message_id=session['messageId'],
+                reply_markup=changeButton(sessionId, session["enableAI"])
+            )
+            # 发送提示消息给对方
+            message_content = "AI客服已关闭" if data["content"] == '111' else "AI客服已开启"
+            query = {
+                "type": "text",
+                "content": message_content,
+                "from": "operator",
+                "origin": "chat",
+                "user": {
+                    "nickname": '系统消息',
+                    "avatar": 'https://example.com/system_avatar.png'
+                }
+            }
+            client.website.send_message_in_conversation(websiteId, sessionId, query)
+            return
+
+            
         flow = ['📠<b>消息推送</b>','']
         flow.append(f"🧾<b>消息内容</b>：{data['content']}")
+
+        # 仅在会话的第一条消息时发送提示
+        if session.get("first_message", True):  # 检查是否是会话的第一条消息
+            session["first_message"] = False  # 标记为已发送提示
+            hint_message = "您已接入智能客服 \n\n您可以输入 '111' 关闭AI客服，输入 '222' 开启AI客服。"
+            hint_query = {
+                "type": "text",
+                "content": hint_message,
+                "from": "operator",
+                "origin": "chat",
+                "user": {
+                    "nickname": '系统消息',
+                    "avatar": 'https://example.com/system_avatar.png'
+                }
+            }
+            client.website.send_message_in_conversation(websiteId, sessionId, hint_query)  # 发送提示消息
 
         result, autoreply = getKey(data["content"])
         if result is True:
