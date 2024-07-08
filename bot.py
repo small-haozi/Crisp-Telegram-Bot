@@ -40,7 +40,7 @@ except Exception as error:
 
 # Connect OpenAI
 try:
-    openai = OpenAI(api_key=config['openai']['apiKey'], base_url='https://api.openai.com/v1')
+    openai = OpenAI(api_key=config['openai']['apiKey'], base_url='https://www.gptapi.us/v1')
     openai.models.list()
 except Exception as error:
     logging.warning('无法连接 OpenAI 服务，智能化回复将不会使用')
@@ -76,7 +76,7 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 "origin": "chat",
                 "user": {
                     "nickname": '人工客服',
-                    "avatar": 'https://i.111666.best/image/cAxQJWIjQt8mHE42kOUzXu.jpg'
+                    "avatar": 'https://pic.imgdb.cn/item/668b0a5dd9c307b7e9eee052.png'
                 }
             }
             client.website.send_message_in_conversation(
@@ -123,6 +123,7 @@ async def onChange(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await query.answer('无法标记对话为完成')
             await query.message.reply_text(f"未知错误: {error}")
     else:
+        session_id = data[0]  # 从 data 中解析 session_id
         if openai is None:
             await query.answer('无法设置此功能')
         else:
@@ -131,8 +132,29 @@ async def onChange(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await query.answer()
             try:
                 await query.edit_message_reply_markup(changeButton(data[0], session["enableAI"]))
+                # 发送提示消息给对方
+                if session["enableAI"]:
+                    message_content = "客服暂时无法回复您，AI客服已接入"
+                else:
+                    message_content = "关闭AI自动回复，人工客服已接入"
+                
+                query = {
+                    "type": "text",
+                    "content": message_content,
+                    "from": "operator",
+                    "origin": "chat",
+                    "user": {
+                        "nickname": '系统消息',
+                        "avatar": 'https://example.com/system_avatar.png'
+                    }
+                }
+                client.website.send_message_in_conversation(
+                    config['crisp']['website'],
+                    session_id,
+                    query
+                )
             except Exception as error:
-                logging.error(error)
+                logging.error(error) 
 
     # 生成并发送按钮
     conversation_id = data[0]
