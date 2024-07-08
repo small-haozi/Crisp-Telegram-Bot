@@ -69,6 +69,7 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     for conversation_id in context.bot_data:
         if context.bot_data[conversation_id]['topicId'] == msg.message_thread_id:
+
             query = {
                 "type": "text",
                 "content": msg.text,
