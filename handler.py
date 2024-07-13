@@ -115,7 +115,7 @@ async def sendMessage(data):
         flow.append(f"🧾<b>消息内容</b>：{data['content']}")
 
         # 仅在会话的第一条消息时发送提示
-        if session.get("first_message", True):  # 检查是否是会话的第一条消息
+        if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
             session["first_message"] = False  # 标记为已发送提示
             hint_message = "您已接入智能客服 \n\n您可以输入 '111' 关闭AI客服，输入 '222' 开启AI客服。"
             hint_query = {
