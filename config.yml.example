@@ -39,4 +39,5 @@ image_upload:
   cloudinary:   
     cloud_name: "" #  YOUR_CLOUD_NAME
     api_key: ""     # YOUR_CLOUDINARY_API_KEY
+    api_secret: ""  # YOUR_CLOUDINARY_API_SECRET
     upload_preset: "" # YOUR_UPLOAD_PRESET
