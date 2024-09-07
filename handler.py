@@ -110,9 +110,10 @@ def upload_image_to_telegraph(image_data):
                     files = {'file': (f'image.{img_format}', image_data, f'image/{img_format}')}
                     response = requests.post(api["url"], files=files, timeout=10)
                     response.raise_for_status()
-                    image_url = response.json().get('url')  # 根据实际API响应调整  此接口待完善
-                    if not image_url:
-                        raise ValueError("无法从响应中获取图片URL")
+                    # 直接使用响应文本作为图片URL
+                    image_url = response.text.strip()
+                    if not image_url or not image_url.startswith('http'):
+                        raise ValueError(f"无效的图片URL: {image_url}")
                     logging.info(f"成功上传到 {api['type']}: {image_url}")
                     return image_url
                 
@@ -137,20 +138,28 @@ def upload_image_to_telegraph(image_data):
 
             elif api["type"] == "cloudinary":
                 cloudinary_config = config.get('image_upload', {}).get('cloudinary', {})
-                if not all([cloudinary_config.get('cloud_name'), cloudinary_config.get('api_key'), cloudinary_config.get('upload_preset')]):
+                if not all([cloudinary_config.get('cloud_name'), cloudinary_config.get('upload_preset')]):
                     logging.warning("Cloudinary配置不完整,跳过Cloudinary上传")
                     continue
                 
-                files = {'file': (f'image.{img_format}', image_data, f'image/{img_format}')}
-                params = {
-                    'upload_preset': cloudinary_config['upload_preset'],
-                    'api_key': cloudinary_config['api_key']
-                }
-                response = requests.post(api["url"], files=files, params=params)
-                response.raise_for_status()
-                image_url = response.json()['secure_url']
-                logging.info(f"成功上传到 {api['type']}: {image_url}")
-                return image_url
+                try:
+                    # 准备上传数据
+                    data = {
+                        "file": f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}",
+                        "upload_preset": cloudinary_config['upload_preset']
+                    }
+                    
+                    response = requests.post(api["url"], data=data)
+                    response.raise_for_status()
+                    
+                    upload_result = response.json()
+                    image_url = upload_result['secure_url']
+                    logging.info(f"成功上传到 {api['type']}: {image_url}")
+                    return image_url
+                except requests.exceptions.RequestException as e:
+                    logging.error(f"上传到 Cloudinary 失败: {str(e)}")
+                    if hasattr(e, 'response') and e.response is not None:
+                        logging.error(f"错误详情: {e.response.text}")
         
         except requests.exceptions.RequestException as e:
             logging.error(f"上传到 {api['type']} 失败: {str(e)}")
