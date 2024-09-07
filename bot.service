@@ -1,0 +1,14 @@
+   [Unit]
+   Description=Telegram Bot Service
+   After=network.target
+
+   [Service]
+   ExecStart=/usr/bin/python3 /root/Crisp-Telegram-Bot/bot.py
+   WorkingDirectory=/root/Crisp-Telegram-Bot/
+   StandardOutput=inherit
+   StandardError=inherit
+   Restart=always
+   User=root
+
+   [Install]
+   WantedBy=multi-user.target

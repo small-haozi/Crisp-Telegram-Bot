@@ -1,0 +1,42 @@
+bot:
+  # Bot Token
+  token: 123456789:ddfsdsfsdddsfd
+  # 发送至群
+  groupId: 
+crisp:
+  # 插件 ID
+  id: 
+  # 插件秘钥
+  key: 
+  # 网站 ID
+  website: 
+autoreply:
+  # 自动关键词回复，你可以复制成多行，每个关键词用 `|` 隔开即可，在 `:` 后输入自动回复内容
+  "在吗|你好": "欢迎使用客服系统，请等待客服回复你~，如果客服未能及时回复，您可以在服务中心发起工单联系客服！！！"
+openai:
+  # APIKey
+  apiKey:  
+  # 预制内容，内容越多token消耗越多，单价越贵
+  payload: |
+    作为简体中文客服，请始终以温柔、耐心的态度回复所有消息，确保每次交互中用户感受到尊重和理解。
+    请仅使用纯文本回复，不得使用其他语言或格式化语法。
+    积极倾听用户的问题，耐心询问细节，并提供清晰、详细的回答或指导。
+    优先参考提供的内容，以提供准确解答；若知识库无相关信息，再深入思考找到适合的回答。
+    在每次互动中，确保为用户提供友好、积极的支持体验。
+
+image_upload: 
+  enabled_services:      # 选择开启的图床接口  开启（true） 关闭（false）
+    telegraph: false
+    imgbb: true
+    sang_pub: false
+    cloudinary: false  
+  # 由于Telegraph近期已禁止上传媒体文件 新增三个图床接口配置  如果你的服务器被墙了 请务必配置下方两个接口中的一个，否则图片无法发送
+  # 如果全部配置则为四个接口轮询！！！
+  imgbb_api_key: ""   # https://api.imgbb.com/  这个网站注册账号后返回这个网站 获取api_key  
+  imgbb_expiration: 86400 # 一天的秒数,如果设为0则不使用过期时间（保存在图床的时间-可根据自己需求更改，单位为'秒'）
+
+  # cloudinary 配置项  如果没有配置则留空
+  cloudinary:   
+    cloud_name: "" #  YOUR_CLOUD_NAME
+    api_key: ""     # YOUR_CLOUDINARY_API_KEY
+    upload_preset: "" # YOUR_UPLOAD_PRESET
