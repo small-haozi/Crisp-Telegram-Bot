@@ -20,6 +20,8 @@ changeButton = bot.changeButton
 groupId = config["bot"]["groupId"]
 websiteId = config["crisp"]["website"]
 payload = config["openai"]["payload"]
+# 添加这一行来初始化avatars
+avatars = config.get('avatars', {})
 
 
 
@@ -284,7 +286,7 @@ async def sendMessage(data):
                 "origin": "chat",
                 "user": {
                     "nickname": '系统消息',
-                    "avatar": 'https://example.com/system_avatar.png'
+                    "avatar": avatars.get('system_message', 'https://example.com/system_avatar.png')
                 }
             }
             client.website.send_message_in_conversation(websiteId, sessionId, query)
@@ -305,7 +307,7 @@ async def sendMessage(data):
                 "origin": "chat",
                 "user": {
                     "nickname": '系统消息',
-                    "avatar": 'https://example.com/system_avatar.png'
+                    "avatar": avatars.get('system_message', 'https://example.com/system_avatar.png')
                 }
             }
             client.website.send_message_in_conversation(websiteId, sessionId, hint_query)  # 发送提示消息
@@ -334,7 +336,7 @@ async def sendMessage(data):
                 "origin": "chat",
                 "user": {
                     "nickname": '智能客服',
-                    "avatar": 'https://img.ixintu.com/download/jpg/20210125/8bff784c4e309db867d43785efde1daf_512_512.jpg'
+                    "avatar": avatars.get('ai_agent', 'https://img.ixintu.com/download/jpg/20210125/8bff784c4e309db867d43785efde1daf_512_512.jpg')
                 }
             }
             client.website.send_message_in_conversation(websiteId, sessionId, query)
