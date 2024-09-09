@@ -85,7 +85,7 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     "origin": "chat",
                     "user": {
                         "nickname": '人工客服',
-                        "avatar": 'https://example.com/system_avatar.png'
+                        "avatar": handler.avatars.get('human_agent', 'https://example.com/default_avatar.png')
                     }
                 }
             elif msg.photo:  # 处理图片消息
@@ -107,7 +107,7 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         "origin": "chat",
                         "user": {
                             "nickname": '人工客服',
-                            "avatar": 'https://example.com/system_avatar.png'
+                            "avatar": handler.avatars.get('human_agent', 'https://example.com/default_avatar.png')
                         }
                     }
                 except Exception as e:
@@ -123,37 +123,24 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 conversation_id,
                 query
             )
-            # 获取新的元信息
             try:
-                new_meta_info = handler.getMetas(conversation_id)
+                # 直接生成新的回复标记
+                new_reply_markup = changeButton(conversation_id, context.bot_data[conversation_id].get("enableAI", False))
+
+                # 尝试更新消息的回复标记
+                await context.bot.edit_message_reply_markup(
+                    chat_id=msg.chat_id,
+                    message_id=context.bot_data[conversation_id]['messageId'],
+                    reply_markup=new_reply_markup
+                )
+            except telegram.error.BadRequest as e:
+                if "Message is not modified" not in str(e):
+                    # 如果错误不是"消息未修改"，则记录错误
+                    logging.error(f"更新消息标记失败: {str(e)}")
+                # 如果是"消息未修改"错误，我们可以安全地忽略它
             except Exception as e:
-                print(f"获取元信息失败: {str(e)}")
-                new_meta_info = "无法获取元信息"
-            
-            # 检查元信息是否发生变化
-            if new_meta_info != context.bot_data[conversation_id].get('last_meta_info'):
-                try:
-                    # 编辑消息
-                    edited_message = await context.bot.edit_message_text(
-                        chat_id=msg.chat_id,
-                        message_id=context.bot_data[conversation_id]['messageId'],
-                        text=new_meta_info,
-                        reply_markup=changeButton(conversation_id, context.bot_data[conversation_id].get("enableAI", False))
-                    )
-                    context.bot_data[conversation_id]['last_meta_info'] = new_meta_info
-                    
-                    # 置顶编辑后的消息
-                    await context.bot.pin_chat_message(
-                        chat_id=msg.chat_id,
-                        message_id=edited_message.message_id,
-                        disable_notification=True  # 设置为 True 可以静默置顶，不会发送通知
-                    )
-                    print(f"消息已更新并置顶: {edited_message.message_id}")
-                except BadRequest as e:
-                    if "Message is not modified" not in str(e):
-                        print(f"更新或置顶消息失败: {str(e)}")
-                except Exception as e:
-                    print(f"更新或置顶消息时发生未知错误: {str(e)}")
+                # 捕获其他可能的异常
+                logging.error(f"更新消息时出错: {str(e)}")
             return
 
 async def onChange(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -209,7 +196,7 @@ async def onChange(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     "origin": "chat",
                     "user": {
                         "nickname": '系统消息',
-                        "avatar": 'https://example.com/system_avatar.png'
+                        "avatar": handler.avatars.get('system_message', 'https://example.com/system_avatar.png')
                     }
                 }
                 client.website.send_message_in_conversation(
@@ -225,13 +212,13 @@ async def onChange(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # 生成并发送按钮
     conversation_id = data[0]
-    if 'button_sent' not in context.bot_data[conversation_id]:
+    if 'button_sent' not in context.bot_data.get(conversation_id, {}):
         try:
             await query.message.reply_text(
                 "选择操作：",
-                reply_markup=changeButton(conversation_id, context.bot_data[conversation_id].get("enableAI", False))
+                reply_markup=changeButton(conversation_id, context.bot_data.get(conversation_id, {}).get("enableAI", False))
             )
-            context.bot_data[conversation_id]['button_sent'] = True
+            context.bot_data.setdefault(conversation_id, {})['button_sent'] = True
         except Exception as e:
             logging.error(f"发送按钮消息失败: {str(e)}")
         
