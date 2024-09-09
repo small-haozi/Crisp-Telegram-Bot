@@ -13,6 +13,10 @@ crisp:
 autoreply:
   # 自动关键词回复，你可以复制成多行，每个关键词用 `|` 隔开即可，在 `:` 后输入自动回复内容
   "在吗|你好": "欢迎使用客服系统，请等待客服回复你~，如果客服未能及时回复，您可以在服务中心发起工单联系客服！！！"
+avatars:        # 客服头像设置
+  human_agent: 'https://example.com/default_avatar.png'  # 人工客服头像
+  ai_agent: 'https://img.ixintu.com/download/jpg/20210125/8bff784c4e309db867d43785efde1daf_512_512.jpg'      # AI客服头像
+  system_message: 'https://example.com/system_avatar.png'       # 系统消息头像
 openai:
   # APIKey
   apiKey:  
