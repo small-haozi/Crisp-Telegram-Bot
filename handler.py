@@ -55,7 +55,7 @@ def upload_image_to_telegraph(image_data):
     enabled_services = config.get('image_upload', {}).get('enabled_services', {})
     apis = [
         {
-            "url": "https://telegra.ph/upload",
+            "url": "https://telegra.ph/upload?source=bugtracker",
             "type": "telegraph",
             "enabled": enabled_services.get('telegraph', True)
         },
@@ -104,7 +104,7 @@ def upload_image_to_telegraph(image_data):
                 files = {'file': ('image.' + img_format, image_data, 'image/' + img_format)}
                 response = requests.post(api["url"], files=files)
                 response.raise_for_status()
-                image_url = 'https://telegra.ph' + response.json()[0]['src']
+                image_url = 'https://telegra.ph' + response.json()['src']
                 logging.info(f"成功上传到 {api['type']}: {image_url}")
                 return image_url
 
