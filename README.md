@@ -9,6 +9,7 @@ Python 版本需求 >= 3.9
 # apt install git 
 git clone https://github.com/small-haozi/Crisp-Telegram-Bot.git
 cd Crisp-Telegram-Bot
+chmod +x crispbot.sh
 ./crispbot.sh
 ```
 
