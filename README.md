@@ -9,10 +9,7 @@ Python 版本需求 >= 3.9
 # apt install git 
 git clone https://github.com/small-haozi/Crisp-Telegram-Bot.git
 cd Crisp-Telegram-Bot
-pip3 install -r requirements.txt
-cp config.yml.example config.yml
-nano config.yml
-python3 bot.py
+./crispbot.sh
 ```
 
 ## 申请 Telegram Bot Token
