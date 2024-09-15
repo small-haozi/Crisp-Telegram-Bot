@@ -90,6 +90,36 @@ install_dependencies() {
     echo -e "${GREEN}依赖安装完成${NC}"
 }
 
+# 卸载函数
+uninstall() {
+    echo -e "${YELLOW}正在卸载 Telegram Bot...${NC}"
+    
+    # 停止服务
+    sudo systemctl stop $SERVICE_NAME
+    
+    # 禁用服务
+    sudo systemctl disable $SERVICE_NAME
+    
+    # 删除服务文件
+    sudo rm /etc/systemd/system/$SERVICE_NAME
+    
+    # 重新加载systemd
+    sudo systemctl daemon-reload
+    
+    # 提示用户是否要删除Bot目录
+    read -p "是否删除Bot目录 ($BOT_DIR)? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]
+    then
+        rm -rf $BOT_DIR
+        echo -e "${GREEN}Bot目录已删除${NC}"
+    else
+        echo -e "${YELLOW}Bot目录未删除${NC}"
+    fi
+    
+    echo -e "${GREEN}卸载完成${NC}"
+}
+
 # 配置引导函数
 configure_bot() {
     echo -e "${YELLOW}开始配置 Bot...${NC}"
@@ -107,8 +137,7 @@ configure_bot() {
     
     # 提示用户编辑配置文件
     echo -e "${YELLOW}请编辑 $BOT_DIR/config.yml 文件，填入必要的配置信息${NC}"
-    read -p "按回车键继续..."
-    nano "$BOT_DIR/config.yml"
+    read -p "请修改本目录（$BOT_DIR）的config.yml后，按回车键继续..."
 }
 
 # 安装函数
@@ -195,15 +224,17 @@ show_menu() {
     echo "    Crisp for Telegram Bot 管理菜单"
     echo "============================================"
     echo ""
-    echo "1. 安装 Bot 服务"
+    echo "1. 安装 crispBot"
     echo ""
-    echo "2. 重启 Bot 服务"
+    echo "2. 重启 Bot "
     echo ""
-    echo "3. 停止 Bot 服务"
+    echo "3. 停止 Bot "
     echo ""
     echo "4. 查看 Bot 日志"
     echo ""
-    echo "5. 退出脚本"
+    echo "5. 卸载 crispBot"
+    echo ""
+    echo "6. 退出脚本"
     echo ""
     echo "============================================"
     check_status
@@ -217,7 +248,7 @@ show_menu() {
 # 主循环
 while true; do
     show_menu
-    echo -e "${YELLOW}请选择操作 [1-5]: ${NC}"
+    echo -e "${YELLOW}请选择操作 [1-6]: ${NC}"
     read -n 1 -s choice
     echo  # 打印一个换行
     case $choice in
@@ -236,6 +267,9 @@ while true; do
             read -n 1 -s
             ;;
         5)
+            uninstall
+            ;;
+        6)
             echo -e "${GREEN}感谢使用，再见！${NC}"
             exit 0
             ;;
