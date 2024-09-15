@@ -216,7 +216,6 @@ show_menu() {
 
 # 主循环
 while true; do
-    clear  # 清屏
     show_menu
     echo -e "${YELLOW}请选择操作 [1-5]: ${NC}"
     read -n 1 -s choice
