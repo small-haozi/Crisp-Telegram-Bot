@@ -194,11 +194,17 @@ show_menu() {
     echo "============================================"
     echo "    Crisp for Telegram Bot 管理菜单"
     echo "============================================"
+    echo ""
     echo "1. 安装 Bot 服务"
+    echo ""
     echo "2. 重启 Bot 服务"
+    echo ""
     echo "3. 停止 Bot 服务"
+    echo ""
     echo "4. 查看 Bot 日志"
-    echo "5. 退出"
+    echo ""
+    echo "5. 退出脚本"
+    echo ""
     echo "============================================"
     check_status
     echo "============================================"
@@ -210,8 +216,11 @@ show_menu() {
 
 # 主循环
 while true; do
+    clear  # 清屏
     show_menu
-    read -p "请选择操作 [1-5]: " choice
+    echo -e "${YELLOW}请选择操作 [1-5]: ${NC}"
+    read -n 1 -s choice
+    echo  # 打印一个换行
     case $choice in
         1)
             install
@@ -224,6 +233,8 @@ while true; do
             ;;
         4)
             view_logs
+            echo -e "${YELLOW}按任意键返回主菜单...${NC}"
+            read -n 1 -s
             ;;
         5)
             echo -e "${GREEN}感谢使用，再见！${NC}"
@@ -231,7 +242,7 @@ while true; do
             ;;
         *)
             echo -e "${RED}无效选项，请重新选择${NC}"
+            sleep 2
             ;;
     esac
-    read -p "按回车键继续..."
 done
