@@ -39,7 +39,7 @@ image_upload:
   imgbb_api_key: ""   # https://api.imgbb.com/  这个网站注册账号后返回这个网站 获取api_key  
   imgbb_expiration: 86400 # 一天的秒数,如果设为0则不使用过期时间（保存在图床的时间-可根据自己需求更改，单位为'秒'）
 
-  # cloudinary 配置项  如果没有配置则留空
+  # cloudinary 配置项  如果没有配置则留空   此图床配置较为复杂 请自行研究   
   cloudinary:   
     cloud_name: "" #  YOUR_CLOUD_NAME
     api_key: ""     # YOUR_CLOUDINARY_API_KEY
