@@ -140,6 +140,17 @@ configure_bot() {
     read -p "请修改本目录（$BOT_DIR）的config.yml后，按回车键继续..."
 }
 
+# 添加计划任务函数
+add_cron_job() {
+    echo -e "${YELLOW}正在添加计划任务...${NC}"
+    
+    # 检查当前用户的 crontab
+    (crontab -l 2>/dev/null; echo "30 3 * * * /usr/bin/systemctl restart $SERVICE_NAME") | crontab -
+    
+    echo -e "${GREEN}计划任务已添加，每天 3:30 重启 Bot 服务${NC}"
+}
+
+
 # 安装函数
 install() {
     echo -e "${YELLOW}开始安装 Telegram Bot...${NC}"
@@ -177,6 +188,10 @@ EOL
 
     # 创建符号链接
     create_symlink
+
+    # 添加计划任务
+    add_cron_job
+
 
     echo -e "${GREEN}安装完成并已启动服务${NC}"
 }
