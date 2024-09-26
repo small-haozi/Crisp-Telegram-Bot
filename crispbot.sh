@@ -230,7 +230,8 @@ check_status() {
 # 查看日志函数
 view_logs() {
     echo -e "${YELLOW}正在查看 Bot 日志...${NC}"
-    journalctl -u $SERVICE_NAME -n 50 --no-pager
+    # 使用 tail -f 实时查看日志
+    sudo journalctl -u $SERVICE_NAME -f
 }
 
 # 主菜单
