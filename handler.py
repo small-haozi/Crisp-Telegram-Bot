@@ -424,6 +424,13 @@ async def exec(context: ContextTypes.DEFAULT_TYPE):
     # 添加处理图片的处理程序
     context.application.add_handler(MessageHandler(filters.PHOTO, handle_telegram_photo))
 
+    # 发送启动消息到默认话题
+    chat_id = config['bot']['groupId']  # 群组ID
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="机器人已启动"
+    )
+
     # await sendAllUnread()
     await sio.connect(
         getCrispConnectEndpoints(),
