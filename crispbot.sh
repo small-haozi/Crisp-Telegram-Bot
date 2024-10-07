@@ -196,6 +196,21 @@ EOL
     echo -e "${GREEN}安装完成并已启动服务${NC}"
 }
 
+# 启动服务函数
+start() {
+    echo -e "${YELLOW}正在启动 crispbot 服务...${NC}"
+    sudo systemctl daemon-reload
+    sudo systemctl start $SERVICE_NAME
+    
+    # 等待服务重启完成
+    while ! systemctl is-active --quiet $SERVICE_NAME; do
+        sleep 1
+    done
+    
+    echo -e "${GREEN}启动完成${NC}"
+    check_status
+}
+
 # 重启服务函数
 restart() {
     echo -e "${YELLOW}正在重启 Bot 服务...${NC}"
@@ -231,7 +246,7 @@ check_status() {
 view_logs() {
     echo -e "${YELLOW}正在查看 Bot 日志...${NC}"
     # 使用 tail -f 实时查看日志
-    sudo journalctl -u $SERVICE_NAME -f
+    sudo journalctl -u $SERVICE_NAME -n 30 -f
 }
 
 # 主菜单
@@ -242,15 +257,17 @@ show_menu() {
     echo ""
     echo "1. 安装 crispBot"
     echo ""
-    echo "2. 重启 Bot "
+    echo "2. 启动 Bot "
     echo ""
-    echo "3. 停止 Bot "
+    echo "3. 重启 Bot "
     echo ""
-    echo "4. 查看 Bot 日志"
+    echo "4. 停止 Bot "
     echo ""
-    echo "5. 卸载 crispBot"
+    echo "5. 查看 Bot 日志"
     echo ""
-    echo "6. 退出脚本"
+    echo "6. 卸载 crispBot"
+    echo ""
+    echo "0. 退出脚本"
     echo ""
     echo "============================================"
     check_status
@@ -272,20 +289,23 @@ while true; do
             install
             ;;
         2)
-            restart
+            start
             ;;
         3)
-            stop
+            restart
             ;;
         4)
+            stop
+            ;;
+        5)
             view_logs
             echo -e "${YELLOW}按任意键返回主菜单...${NC}"
             read -n 1 -s
             ;;
-        5)
+        6)
             uninstall
             ;;
-        6)
+        0)
             echo -e "${GREEN}感谢使用，再见！${NC}"
             exit 0
             ;;
