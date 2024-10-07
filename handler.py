@@ -375,6 +375,10 @@ sio = socketio.AsyncClient(reconnection_attempts=5, logger=True)
 # Def Event Handlers
 @sio.on("connect")
 async def connect():
+    await callbackContext.bot.send_message(
+        groupId,
+        "已连接到 Crisp 服务器。",
+    )
     await sio.emit("authentication", {
         "tier": "plugin",
         "username": config["crisp"]["id"],
@@ -389,9 +393,19 @@ async def unauthorized(data):
 @sio.event
 async def connect_error():
     print("The connection failed!")
+    await callbackContext.bot.send_message(
+        groupId,
+        "无法连接到 Crisp 服务器。",
+    )
+    
 @sio.event
 async def disconnect():
     print("Disconnected from server.")
+    await callbackContext.bot.send_message(
+        groupId,
+        "与 Crisp 服务器断开连接。",
+    )
+    
 @sio.on("message:send")
 async def messageForward(data):
     if data["website_id"] != websiteId:
@@ -425,9 +439,8 @@ async def exec(context: ContextTypes.DEFAULT_TYPE):
     context.application.add_handler(MessageHandler(filters.PHOTO, handle_telegram_photo))
 
     # 发送启动消息到默认话题
-    chat_id = config['bot']['groupId']  # 群组ID
-    await context.bot.send_message(
-        chat_id=chat_id,
+    await callbackContext.bot.send_message(
+        groupId,
         text="机器人已启动"
     )
 
