@@ -216,6 +216,25 @@ def getMetas(sessionId):
         if "UsedTraffic" in metas["data"] and "AllTraffic" in metas["data"]:
             flow.append(f"🗒<b>流量信息</b>：{metas['data']['UsedTraffic']} / {metas['data']['AllTraffic']}")
             info_added = True
+
+    # 获取地理位置
+    if metas.get("device") and metas["device"].get("geolocation"):
+        geolocation = metas["device"]["geolocation"]
+        if geolocation.get("country"):
+            flow.append(f'🇺🇸<b>国家</b>：{geolocation["country"]}')
+            info_added = True
+        if geolocation.get("region"):
+            flow.append(f'🏙️<b>地区</b>：{geolocation["region"]}')
+            info_added = True
+        if geolocation.get("city"):
+            flow.append(f'🌆<b>城市</b>：{geolocation["city"]}')
+            info_added = True
+        if geolocation.get("coordinates"):
+            coords = geolocation["coordinates"]
+            if coords.get("latitude") and coords.get("longitude"):
+                flow.append(f'📍<b>坐标</b>：{coords["latitude"]}, {coords["longitude"]}')
+                info_added = True
+                
     if metas.get("device"):
         device = metas["device"]
         if device.get("system"):
