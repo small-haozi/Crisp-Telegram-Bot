@@ -183,10 +183,27 @@ def getKey(content: str):
     return False, None
 
 def getMetas(sessionId):
-    metas = client.website.get_conversation_metas(websiteId, sessionId)
+    conversation = client.website.get_conversation(websiteId, sessionId)
 
     flow = ['📠<b>Crisp消息推送</b>']
     info_added = False
+
+    if conversation.get("error"):
+        flow.append('无法获取会话信息')
+        return '\n'.join(flow)
+
+    data = conversation.get("data", {})
+
+    # 添加会话信息
+    if data.get("people_id"):
+        flow.append(f'👤<b>访客ID</b>：{data["people_id"]}')
+        info_added = True
+
+    if data.get("state"):
+        flow.append(f'🔄<b>会话状态</b>：{data["state"]}')
+        info_added = True
+
+    metas = client.website.get_conversation_metas(websiteId, sessionId)
 
     if metas.get("email"):
         flow.append(f'📧<b>电子邮箱</b>：{metas["email"]}')
@@ -199,7 +216,18 @@ def getMetas(sessionId):
         if "UsedTraffic" in metas["data"] and "AllTraffic" in metas["data"]:
             flow.append(f"🗒<b>流量信息</b>：{metas['data']['UsedTraffic']} / {metas['data']['AllTraffic']}")
             info_added = True
+    if metas.get("device"):
+        device = metas["device"]
+        if device.get("system"):
+            os_info = device["system"].get("os", {})
+            if os_info.get("name"):
+                flow.append(f'💻<b>操作系统</b>：{os_info["name"]} {os_info.get("version", "")}')
+                info_added = True
 
+            browser_info = device["system"].get("browser", {})
+            if browser_info.get("name"):
+                flow.append(f'🌐<b>浏览器</b>：{browser_info["name"]} {browser_info.get("version", "")}')
+                info_added = True
     if not info_added:
         flow.append('无额外信息')
 
