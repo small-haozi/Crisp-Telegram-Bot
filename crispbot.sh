@@ -10,7 +10,7 @@ NC='\033[0m' # No Color
 SERVICE_NAME="bot.service"
 
 # 获取脚本所在目录
-BOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+BOT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")" )" &> /dev/null && pwd )"
 
 # 脚本名称
 SCRIPT_NAME=$(basename "$0")
