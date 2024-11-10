@@ -16,9 +16,9 @@ BOT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")" )" &> /dev/null 
 SCRIPT_NAME=$(basename "$0")
 
 # 检查是否以root权限运行
-if [ "$EUID" -ne 0 ]
-  then echo -e "${RED}请以root权限运行此脚本${NC}"
-  exit
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${RED}请以root权限运行此脚本${NC}"
+    exit
 fi
 
 # 创建符号链接函数
@@ -83,9 +83,15 @@ install_dependencies() {
         echo -e "${RED}未找到 requirements.txt 文件${NC}"
         exit 1
     fi
+
+    # 创建虚拟环境
+    python3 -m venv "$BOT_DIR/venv"
+    
+    # 激活虚拟环境
+    source "$BOT_DIR/venv/bin/activate"
     
     # 安装依赖
-    pip3 install -r "$BOT_DIR/requirements.txt"
+    pip install -r "$BOT_DIR/requirements.txt"
     
     echo -e "${GREEN}依赖安装完成${NC}"
 }
@@ -109,8 +115,7 @@ uninstall() {
     # 提示用户是否要删除Bot目录
     read -p "是否删除Bot目录 ($BOT_DIR)? [y/N] " -n 1 -r
     echo
-    if [[ $REPLY =~ ^[Yy]$ ]]
-    then
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -rf $BOT_DIR
         echo -e "${GREEN}Bot目录已删除${NC}"
     else
@@ -150,7 +155,6 @@ add_cron_job() {
     echo -e "${GREEN}计划任务已添加，每天 3:30 重启 Bot 服务${NC}"
 }
 
-
 # 安装函数
 install() {
     echo -e "${YELLOW}开始安装 Telegram Bot...${NC}"
@@ -166,7 +170,7 @@ Description=Telegram Bot Service
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 $BOT_DIR/bot.py
+ExecStart=$BOT_DIR/venv/bin/python $BOT_DIR/bot.py
 WorkingDirectory=$BOT_DIR
 StandardOutput=inherit
 StandardError=inherit
@@ -191,7 +195,6 @@ EOL
 
     # 添加计划任务
     add_cron_job
-
 
     echo -e "${GREEN}安装完成并已启动服务${NC}"
 }
