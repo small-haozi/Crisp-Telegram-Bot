@@ -210,15 +210,18 @@ def getMetas(sessionId):
         info_added = True
 
     if metas.get("data"):
-        if "SubscriptionName" in metas["data"]:
-            flow.append(f"🪪<b>使用套餐</b>：{metas['data']['SubscriptionName']}")
+        if "SubscriptionName" in metas["data"] or "Plan" in metas["data"]:
+            plan_name = metas["data"].get("SubscriptionName", metas["data"].get("Plan", ""))
+            flow.append(f"🪪<b>使用套餐</b>：{plan_name}")
             info_added = True
-        if "UsedTraffic" in metas["data"] and "AvailableTraffic" in metas["data"]:
-            flow.append(f"🗒<b>流量信息</b>：{metas['data']['UsedTraffic']} / {metas['data']['AvailableTraffic']}")
+        if "UsedTraffic" in metas["data"] and ("AvailableTraffic" in metas["data"] or "AllTraffic" in metas["data"]):
+            available_traffic = metas["data"].get("AvailableTraffic", metas["data"].get("AllTraffic", ""))
+            flow.append(f"🗒<b>流量信息</b>：{metas['data']['UsedTraffic']} / {available_traffic}")
             info_added = True
         if "AccountCreated" in metas["data"]:
             flow.append(f"🪪<b>注册时间</b>：{metas['data']['AccountCreated']}")
             info_added = True
+        
 
     # 获取地理位置
     if metas.get("device") and metas["device"].get("geolocation"):
@@ -263,6 +266,7 @@ async def createSession(data):
     session = botData.get(sessionId)
 
     metas = getMetas(sessionId)
+    print(f"获取到的元信息: {metas}")  # 打印获取到的元信息
 
     if session is None:
         enableAI = False if openai is None else True
@@ -340,7 +344,7 @@ async def sendMessage(data):
 
             
         flow = ['📠<b>消息推送</b>','']
-        flow.append(f"🧾<b>消息内容</b>：{data['content']}")
+        flow.append(f"🧾<b>消息内容</b>： {data['content']}")
 
         # 仅在会话的第一条消息时发送提示
         if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
