@@ -266,7 +266,6 @@ async def createSession(data):
     session = botData.get(sessionId)
 
     metas = getMetas(sessionId)
-    print(f"获取到的元信息: {metas}")  # 打印获取到的元信息
 
     if session is None:
         enableAI = False if openai is None else True
