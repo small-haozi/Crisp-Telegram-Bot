@@ -205,9 +205,6 @@ def getMetas(sessionId):
 
     metas = client.website.get_conversation_metas(websiteId, sessionId)
 
-    # 打印完整的 metas 数据
-    print("完整的元数据:", json.dumps(metas, indent=2, ensure_ascii=False))
-
     if metas.get("email"):
         flow.append(f'📧<b>电子邮箱</b>： {metas["email"]}')
         info_added = True
@@ -266,7 +263,6 @@ async def createSession(data):
     session = botData.get(sessionId)
 
     metas = getMetas(sessionId)
-    print(f"获取到的元信息: {metas}")  # 打印获取到的元信息
 
     if session is None:
         enableAI = False if openai is None else True
@@ -344,7 +340,7 @@ async def sendMessage(data):
 
             
         flow = ['📠<b>消息推送</b>','']
-        flow.append(f"🧾<b>消息内容</b>： {data['content']}")
+        flow.append(f"🧾<b>消息内容</b>：{data['content']}")
 
         # 仅在会话的第一条消息时发送提示
         if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
