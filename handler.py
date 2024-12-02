@@ -205,16 +205,22 @@ def getMetas(sessionId):
 
     metas = client.website.get_conversation_metas(websiteId, sessionId)
 
+    # 打印完整的 metas 数据
+    print("完整的元数据:", json.dumps(metas, indent=2, ensure_ascii=False))
+
     if metas.get("email"):
-        flow.append(f'📧<b>电子邮箱</b>：{metas["email"]}')
+        flow.append(f'📧<b>电子邮箱</b>： {metas["email"]}')
         info_added = True
 
     if metas.get("data"):
-        if "Plan" in metas["data"]:
-            flow.append(f"🪪<b>使用套餐</b>：{metas['data']['Plan']}")
+        if "SubscriptionName" in metas["data"]:
+            flow.append(f"🪪<b>使用套餐</b>：{metas['data']['SubscriptionName']}")
             info_added = True
-        if "UsedTraffic" in metas["data"] and "AllTraffic" in metas["data"]:
-            flow.append(f"🗒<b>流量信息</b>：{metas['data']['UsedTraffic']} / {metas['data']['AllTraffic']}")
+        if "UsedTraffic" in metas["data"] and "AvailableTraffic" in metas["data"]:
+            flow.append(f"🗒<b>流量信息</b>：{metas['data']['UsedTraffic']} / {metas['data']['AvailableTraffic']}")
+            info_added = True
+        if "AccountCreated" in metas["data"]:
+            flow.append(f"🪪<b>注册时间</b>：{metas['data']['AccountCreated']}")
             info_added = True
 
     # 获取地理位置
@@ -234,7 +240,7 @@ def getMetas(sessionId):
             if coords.get("latitude") and coords.get("longitude"):
                 flow.append(f'📍<b>坐标</b>：{coords["latitude"]}, {coords["longitude"]}')
                 info_added = True
-                
+
     if metas.get("device"):
         device = metas["device"]
         if device.get("system"):
@@ -260,16 +266,18 @@ async def createSession(data):
     session = botData.get(sessionId)
 
     metas = getMetas(sessionId)
+    print(f"获取到的元信息: {metas}")  # 打印获取到的元信息
+
     if session is None:
         enableAI = False if openai is None else True
         topic = await bot.create_forum_topic(
-            groupId,data["user"]["nickname"])
+            groupId, data["user"]["nickname"])
         msg = await bot.send_message(
             groupId,
             metas,
             message_thread_id=topic.message_thread_id,
-            reply_markup=changeButton(sessionId,enableAI)
-            )
+            reply_markup=changeButton(sessionId, enableAI)
+        )
         botData[sessionId] = {
             'topicId': topic.message_thread_id,
             'messageId': msg.message_id,
@@ -277,22 +285,17 @@ async def createSession(data):
             'lastMetas': metas  # 存储最后一次的元信息
         }
     else:
-        if metas != session.get('lastMetas', ''):  # 检查元信息是否有变化
-            try:
-                await bot.edit_message_text(
-                    metas,
-                    chat_id=groupId,
-                    message_id=session['messageId'],
-                    reply_markup=changeButton(sessionId, session.get("enableAI", False))
-                )
-                session['lastMetas'] = metas  # 更新存储的元信息
-            except telegram.error.BadRequest as error:
-                if str(error) != "Message is not modified":
-                    print(f"更新消息失败: {error}")
-            except Exception as error:
-                print(f"发生未知错误: {error}")
-        else:
-            print("元信息没有变化，不更新消息")
+        # 移除元信息变化的检查条件
+        try:
+            await bot.edit_message_text(
+                metas,
+                chat_id=groupId,
+                message_id=session['messageId'],
+                reply_markup=changeButton(sessionId, session.get("enableAI", False))
+            )
+            session['lastMetas'] = metas  # 更新存储的元信息
+        except Exception as error:
+            print(f"发生未知错误: {error}")
 
 # 新增函数：处理 Telegram 发来的图片
 async def handle_telegram_photo(update, context):
