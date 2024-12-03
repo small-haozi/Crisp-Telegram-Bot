@@ -211,7 +211,7 @@ def getMetas(sessionId):
 
     if metas.get("data"):
         if "Account" in metas["data"]:
-            flow.append(f"🪪<b>用户账号</b>： {metas['data']['Account']}")
+            flow.append(f"📧<b>用户账号</b>： {metas['data']['Account']}")
             info_added = True
         if "SubscriptionName" in metas["data"] or "Plan" in metas["data"]:
             plan_name = metas["data"].get("SubscriptionName", metas["data"].get("Plan", ""))
@@ -220,6 +220,12 @@ def getMetas(sessionId):
         if "UsedTraffic" in metas["data"] and ("AvailableTraffic" in metas["data"] or "AllTraffic" in metas["data"]):
             available_traffic = metas["data"].get("AvailableTraffic", metas["data"].get("AllTraffic", ""))
             flow.append(f"🗒<b>流量信息</b>：{metas['data']['UsedTraffic']} / {available_traffic}")
+            info_added = True
+        if "SubscriptionName" in metas["data"]:
+            if "ExpirationTime" in metas["data"] and metas["data"]["ExpirationTime"] != "-":
+                flow.append(f"🪪<b>到期时间</b>：{metas['data']['ExpirationTime']}")
+            else:
+                flow.append("🪪<b>到期时间</b>：长期有效")
             info_added = True
         if "AccountCreated" in metas["data"]:
             flow.append(f"🪪<b>注册时间</b>：{metas['data']['AccountCreated']}")
@@ -269,6 +275,7 @@ async def createSession(data):
     session = botData.get(sessionId)
 
     metas = getMetas(sessionId)
+    print(f"获取到的元信息: {metas}")  # 打印获取到的元信息
 
     if session is None:
         enableAI = False if openai is None else True
@@ -346,7 +353,7 @@ async def sendMessage(data):
 
             
         flow = ['📠<b>消息推送</b>','']
-        flow.append(f"🧾<b>消息内容</b>： {data['content']}")
+        flow.append(f"🧾<b>消息内容</b>：{data['content']}")
 
         # 仅在会话的第一条消息时发送提示
         if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
