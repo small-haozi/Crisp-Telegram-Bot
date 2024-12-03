@@ -210,6 +210,9 @@ def getMetas(sessionId):
         info_added = True
 
     if metas.get("data"):
+        if "Account" in metas["data"]:
+            flow.append(f"🪪<b>用户账号</b>： {metas['data']['Account']}")
+            info_added = True
         if "SubscriptionName" in metas["data"] or "Plan" in metas["data"]:
             plan_name = metas["data"].get("SubscriptionName", metas["data"].get("Plan", ""))
             flow.append(f"🪪<b>使用套餐</b>：{plan_name}")
