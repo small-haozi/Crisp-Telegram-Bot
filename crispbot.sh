@@ -77,6 +77,8 @@ check_environment() {
 # 安装依赖函数
 install_dependencies() {
     echo -e "${YELLOW}正在安装依赖...${NC}"
+
+    sudo apt install python3.11-venv
     
     # 确保 requirements.txt 存在
     if [ ! -f "$BOT_DIR/requirements.txt" ]; then
