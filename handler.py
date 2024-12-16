@@ -206,12 +206,12 @@ def getMetas(sessionId):
     metas = client.website.get_conversation_metas(websiteId, sessionId)
 
     if metas.get("email"):
-        flow.append(f'📧<b>电子邮箱</b>： `{metas["email"]}`')
+        flow.append(f'📧<b>电子邮箱</b>： {metas["email"]}')
         info_added = True
 
     if metas.get("data"):
         if "Account" in metas["data"]:
-            flow.append(f"📧<b>用户账号</b>： `{metas['data']['Account']}`")
+            flow.append(f"📧<b>用户账号</b>： {metas['data']['Account']}")
             info_added = True
         if "SubscriptionName" in metas["data"] or "Plan" in metas["data"]:
             plan_name = metas["data"].get("SubscriptionName", metas["data"].get("Plan", ""))
