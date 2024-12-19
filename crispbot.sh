@@ -256,10 +256,14 @@ view_logs() {
 
 # 更新函数
 update() {
-    echo -e "${YELLOW}正在更新 Crisp to Telegram Bot...${NC}"
+    echo -e "${YELLOW}正在更新 Telegram Bot...${NC}"
     
-    # 克隆最新代码
-    git clone https://github.com/small-haozi/Crisp-Telegram-Bot.git "$BOT_DIR" --depth 1
+    # 进入目标目录
+    cd "$BOT_DIR" || exit
+    
+    # 拉取特定文件
+    git fetch origin main  # 获取最新的远程更新
+    git checkout origin/main -- bot.py handler.py location_names.py requirements.txt  # 只拉取特定文件
     
     # 重新加载systemd
     sudo systemctl daemon-reload
@@ -341,4 +345,3 @@ while true; do
             ;;
     esac
 done
-
