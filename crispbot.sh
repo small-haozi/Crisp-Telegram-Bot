@@ -264,6 +264,9 @@ update() {
     # 拉取特定文件
     git fetch origin main  # 获取最新的远程更新
     git checkout origin/main -- bot.py handler.py location_names.py requirements.txt  # 只拉取特定文件
+
+    echo -e "${GREEN}拉取更新成功${NC}"
+    echo -e "${YELLOW}正在重启应用bot......${NC}"
     
     # 重新加载systemd
     sudo systemctl daemon-reload
