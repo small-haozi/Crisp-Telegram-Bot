@@ -254,6 +254,22 @@ view_logs() {
     sudo journalctl -u $SERVICE_NAME -n 30 -f
 }
 
+# 更新函数
+update() {
+    echo -e "${YELLOW}正在更新 Crisp to Telegram Bot...${NC}"
+    
+    # 克隆最新代码
+    git clone https://github.com/small-haozi/Crisp-Telegram-Bot.git "$BOT_DIR" --depth 1
+    
+    # 重新加载systemd
+    sudo systemctl daemon-reload
+    
+    # 重启服务
+    sudo systemctl restart $SERVICE_NAME
+    
+    echo -e "${GREEN}更新完成${NC}"
+}
+
 # 主菜单
 show_menu() {
     echo "============================================"
@@ -271,6 +287,8 @@ show_menu() {
     echo "5. 查看 Bot 日志"
     echo ""
     echo "6. 卸载 crispBot"
+    echo ""
+    echo "7. 更新 crispBot"
     echo ""
     echo "0. 退出脚本"
     echo ""
@@ -309,6 +327,9 @@ while true; do
             ;;
         6)
             uninstall
+            ;;
+        7)
+            update
             ;;
         0)
             echo -e "${GREEN}感谢使用，再见！${NC}"
