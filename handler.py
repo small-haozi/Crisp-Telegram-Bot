@@ -5,7 +5,6 @@ import socketio
 import requests
 import logging
 import io
-import location_names
 
 from telegram.ext import ContextTypes
 from telegram.ext import MessageHandler, filters
@@ -237,19 +236,13 @@ def getMetas(sessionId):
     if metas.get("device") and metas["device"].get("geolocation"):
         geolocation = metas["device"]["geolocation"]
         if geolocation.get("country"):
-            country_code = geolocation["country"]
-            country_name = location_names.location_names.get(country_code, {}).get("country", country_code)
-            flow.append(f'🇺🇸<b>国家</b>：{country_name}')
+            flow.append(f'🇺🇸<b>国家</b>：{geolocation["country"]}')
             info_added = True
         if geolocation.get("region"):
-            region_code = geolocation["region"]
-            region_name = location_names.location_names.get(country_code, {}).get("region", {}).get(region_code, region_code)
-            flow.append(f'🏙️<b>地区</b>：{region_name}')
+            flow.append(f'🏙️<b>地区</b>：{geolocation["region"]}')
             info_added = True
         if geolocation.get("city"):
-            city_code = geolocation["city"]
-            city_name = location_names.location_names.get(country_code, {}).get("city", {}).get(city_code, city_code)
-            flow.append(f'🌆<b>城市</b>：{city_name}')
+            flow.append(f'🌆<b>城市</b>：{geolocation["city"]}')
             info_added = True
         if geolocation.get("coordinates"):
             coords = geolocation["coordinates"]
