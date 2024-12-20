@@ -78,7 +78,6 @@ translation_dict = {
     "Hefei": "合肥",
     "Taiyuan": "太原",
     "Kunming": "昆明",
-    "Urumqi": "乌鲁木齐",
     "Xining": "西宁",
     "Yinchuan": "银川",
     "Lijiang": "丽江",
