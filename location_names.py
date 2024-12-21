@@ -117,6 +117,7 @@ translation_dict = {
     "Ürümqi": "Ürümqi(乌鲁木齐)",
     "Nanning": "南宁",
     "Changzhi": "长治",
+    "Taishing": "泰兴",
     #----------------------------
     # TW 省
     "TPE": "TPE(台北)",
@@ -126,6 +127,9 @@ translation_dict = {
     # HK 省
     "KKC": "KKC(九龙城区)",
     "Kowloon City": "Kowloon City(九龙城)",
+    #----------------------------
+    # SG
+    "Singapore": "新加坡",
     #----------------------------
     # US 省
     "WA": "WA(华盛顿)",
