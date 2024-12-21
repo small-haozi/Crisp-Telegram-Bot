@@ -122,6 +122,10 @@ translation_dict = {
     # TW 市
     "Taipei": "Taipei(台北)",
     #----------------------------
+    # HK 省
+    "KKC": "KKC(九龙城区)",
+    "Kowloon City": "Kowloon City(九龙城)",
+    #----------------------------
     # US 省
     "WA": "WA(华盛顿)",
     "CA": "CA(加利福尼亚/加拿大)",
@@ -134,7 +138,7 @@ translation_dict = {
     "Detroit": "Detroit(底特律)",
     "Houston": "Houston(休斯顿)",
     "LasVegas": "Las Vegas(拉斯维加斯)",
-    "LosAngeles": "Los Angeles(洛杉矶)",
+    "Los Angeles": "Los Angeles(洛杉矶)",
     "Miami": "Miami(迈阿密)",
     "NewYork": "New York(纽约)",
     "Philadelphia": "Philadelphia(费城)",
