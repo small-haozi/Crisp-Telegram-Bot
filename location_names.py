@@ -48,6 +48,7 @@ translation_dict = {
     "YN": "云南",
     "HLJ": "黑龙江",
     "HA": "河南",
+    "TJ": "天津",
 
     # CN市
     "Beijing": "北京",
