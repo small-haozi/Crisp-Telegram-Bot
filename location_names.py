@@ -59,7 +59,7 @@ translation_dict = {
     "Nanjing": "南京",
     "Wuhan": "武汉",
     "Chengdu": "成都",
-    "Xian": "西安",
+    "Xi'an": "西安",
     "Chongqing": "重庆",
     "Tianjin": "天津",
     "Suzhou": "苏州",
