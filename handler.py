@@ -362,8 +362,8 @@ async def sendMessage(data):
             return
 
             
-        flow = ['📠<b>消息推送</b>','']
-        flow.append(f"🧾<b>消息内容</b>：{data['content']}")
+        flow = []
+        flow.append(f"🧾<b>消息推送</b>： {data['content']}")
 
         # 仅在会话的第一条消息时发送提示
         if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
