@@ -416,8 +416,7 @@ async def sendMessage(data):
         )
     elif data["type"] == "file" and str(data["content"]["type"]).count("image") > 0:
         # 处理从 Crisp 接收到的图片
-        flow = ['📠<b>图片消息推送</b>','']
-        flow.append(f"🖼<b>图片URL</b>：{data['content']['url']}")
+        flow = []
 
         # 发送图片到 Telegram 群组
         await bot.send_photo(
