@@ -48,7 +48,7 @@ except Exception as error:
 
 # Connect OpenAI
 try:
-    openai = OpenAI(api_key=config['openai']['apiKey'], base_url='https://www.gptapi.us/v1')
+    openai = OpenAI(api_key=config['openai']['apiKey'], base_url='https://api.openai.com/v1')
     openai.models.list()
 except Exception as error:
     logging.warning('无法连接 OpenAI 服务，智能化回复将不会使用')
