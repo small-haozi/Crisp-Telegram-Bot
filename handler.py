@@ -5,6 +5,7 @@ import socketio
 import requests
 import logging
 import io
+import re
 from location_names import translation_dict  # 导入词典文件
 
 from telegram.ext import ContextTypes
@@ -25,6 +26,17 @@ payload = config["openai"]["payload"]
 avatars = config.get('avatars', {})
 
 
+def find_emails(content):
+    # 简单的邮箱识别逻辑
+    words = content.split()
+    emails = [word for word in words if '@' in word and '.' in word]
+    return emails
+
+def format_content(content):
+    emails = find_emails(content)
+    for email in emails:
+        content = content.replace(email, f'`{email}`')
+    return content
 
 def print_enabled_image_services():
     enabled_services = config.get('image_upload', {}).get('enabled_services', {})
@@ -186,7 +198,7 @@ def getKey(content: str):
 def getMetas(sessionId):
     conversation = client.website.get_conversation(websiteId, sessionId)
 
-    flow = ['📠<b>Crisp消息推送</b>']
+    flow = ['📠*Crisp消息推送*']
     info_added = False
 
     if conversation.get("error"):
@@ -197,39 +209,39 @@ def getMetas(sessionId):
 
     # 添加会话信息
     if data.get("people_id"):
-        flow.append(f'👤<b>访客ID</b>：{data["people_id"]}')
+        flow.append(f'👤*访客ID*：{data["people_id"]}')
         info_added = True
 
     if data.get("state"):
-        flow.append(f'🔄<b>会话状态</b>：{data["state"]}')
+        flow.append(f'🔄*会话状态*：{data["state"]}')
         info_added = True
 
     metas = client.website.get_conversation_metas(websiteId, sessionId)
 
     if metas.get("email"):
-        flow.append(f'📧<b>电子邮箱</b>： {metas["email"]}')
+        flow.append(f'📧*电子邮箱*： `{metas["email"]}`')
         info_added = True
 
     if metas.get("data"):
         if "Account" in metas["data"]:
-            flow.append(f"📧<b>用户账号</b>： {metas['data']['Account']}")
+            flow.append(f"📧*用户账号*： `{metas['data']['Account']}`")
             info_added = True
         if "SubscriptionName" in metas["data"] or "Plan" in metas["data"]:
             plan_name = metas["data"].get("SubscriptionName", metas["data"].get("Plan", ""))
-            flow.append(f"🪪<b>使用套餐</b>：{plan_name}")
+            flow.append(f"🪪*使用套餐*：{plan_name}")
             info_added = True
         if "UsedTraffic" in metas["data"] and ("AvailableTraffic" in metas["data"] or "AllTraffic" in metas["data"]):
             available_traffic = metas["data"].get("AvailableTraffic", metas["data"].get("AllTraffic", ""))
-            flow.append(f"🗒<b>流量信息</b>：{metas['data']['UsedTraffic']} / {available_traffic}")
+            flow.append(f"🗒*流量信息*：{metas['data']['UsedTraffic']} / {available_traffic}")
             info_added = True
         if "SubscriptionName" in metas["data"]:
             if "ExpirationTime" in metas["data"] and metas["data"]["ExpirationTime"] != "-":
-                flow.append(f"🪪<b>到期时间</b>：{metas['data']['ExpirationTime']}")
+                flow.append(f"🪪*到期时间*：{metas['data']['ExpirationTime']}")
             else:
-                flow.append("🪪<b>到期时间</b>：长期有效")
+                flow.append("🪪*到期时间*：长期有效")
             info_added = True
         if "AccountCreated" in metas["data"]:
-            flow.append(f"🪪<b>注册时间</b>：{metas['data']['AccountCreated']}")
+            flow.append(f"🪪*注册时间*：{metas['data']['AccountCreated']}")
             info_added = True
         
 
@@ -240,24 +252,24 @@ def getMetas(sessionId):
             country = geolocation["country"]
             # 使用词典进行翻译
             translated_country = translation_dict.get(country, country)
-            flow.append(f'🇺🇸<b>国家</b>：{translated_country}')
+            flow.append(f'🇺🇸*国家*：{translated_country}')
             info_added = True
         if geolocation.get("region"):
             region = geolocation["region"]
             # 使用词典进行翻译
             translated_region = translation_dict.get(region, region)
-            flow.append(f'🏙️<b>地区</b>：{translated_region}')
+            flow.append(f'🏙️*地区*：{translated_region}')
             info_added = True
         if geolocation.get("city"):
             city = geolocation["city"]
             # 使用词典进行翻译
             translated_city = translation_dict.get(city, city)
-            flow.append(f'🌆<b>城市</b>：{translated_city}')
+            flow.append(f'🌆*城市*：{translated_city}')
             info_added = True
         if geolocation.get("coordinates"):
             coords = geolocation["coordinates"]
             if coords.get("latitude") and coords.get("longitude"):
-                flow.append(f'📍<b>坐标</b>：{coords["latitude"]}, {coords["longitude"]}')
+                flow.append(f'📍*坐标*：{coords["latitude"]}, {coords["longitude"]}')
                 info_added = True
 
     if metas.get("device"):
@@ -265,12 +277,12 @@ def getMetas(sessionId):
         if device.get("system"):
             os_info = device["system"].get("os", {})
             if os_info.get("name"):
-                flow.append(f'💻<b>操作系统</b>：{os_info["name"]} {os_info.get("version", "")}')
+                flow.append(f'💻*操作系统*：{os_info["name"]} {os_info.get("version", "")}')
                 info_added = True
 
             browser_info = device["system"].get("browser", {})
             if browser_info.get("name"):
-                flow.append(f'🌐<b>浏览器</b>：{browser_info["name"]} {browser_info.get("version", "")}')
+                flow.append(f'🌐*浏览器*：{browser_info["name"]} {browser_info.get("version", "")}')
                 info_added = True
     if not info_added:
         flow.append('无额外信息')
@@ -295,7 +307,8 @@ async def createSession(data):
             groupId,
             metas,
             message_thread_id=topic.message_thread_id,
-            reply_markup=changeButton(sessionId, enableAI)
+            reply_markup=changeButton(sessionId, enableAI),
+            parse_mode='Markdown'
         )
         botData[sessionId] = {
             'topicId': topic.message_thread_id,
@@ -310,7 +323,8 @@ async def createSession(data):
                 metas,
                 chat_id=groupId,
                 message_id=session['messageId'],
-                reply_markup=changeButton(sessionId, session.get("enableAI", False))
+                reply_markup=changeButton(sessionId, session.get("enableAI", False)),
+                parse_mode='Markdown'
             )
             session['lastMetas'] = metas  # 更新存储的元信息
         except Exception as error:
@@ -363,7 +377,8 @@ async def sendMessage(data):
 
             
         flow = []
-        flow.append(f"🧾<b>消息推送</b>： {data['content']}")
+        formatted_content = format_content(data['content'])
+        flow.append(f"🧾*消息推送*： {formatted_content}")
 
         # 仅在会话的第一条消息时发送提示
         if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
@@ -384,7 +399,7 @@ async def sendMessage(data):
         result, autoreply = getKey(data["content"])
         if result is True:
             flow.append("")
-            flow.append(f"💡<b>自动回复</b>：{autoreply}")
+            flow.append(f"💡*自动回复*：{autoreply}")
         elif openai is not None and session["enableAI"] is True:
             response = openai.chat.completions.create(
                 model="gpt-3.5-turbo",
@@ -395,7 +410,7 @@ async def sendMessage(data):
             )
             autoreply = response.choices[0].message.content
             flow.append("")
-            flow.append(f"💡<b>自动回复</b>：{autoreply}")
+            flow.append(f"💡*自动回复*：{autoreply}")
         
         if autoreply is not None:
             query = {
@@ -412,7 +427,8 @@ async def sendMessage(data):
         await bot.send_message(
             groupId,
             '\n'.join(flow),
-            message_thread_id=session["topicId"]
+            message_thread_id=session["topicId"],
+            parse_mode='Markdown'
         )
     elif data["type"] == "file" and str(data["content"]["type"]).count("image") > 0:
         # 处理从 Crisp 接收到的图片
@@ -428,6 +444,8 @@ async def sendMessage(data):
         )
     else:
         print("Unhandled Message Type : ", data["type"])
+
+
 
 async def handle_telegram_photo(update, context):
     # 构造与 sendMessage 函数兼容的数据结构
