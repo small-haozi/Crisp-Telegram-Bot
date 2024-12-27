@@ -160,7 +160,8 @@ add_cron_job() {
 # 安装函数
 install() {
     echo -e "${YELLOW}开始安装 Telegram Bot...${NC}"
-    
+
+    sudo timedatectl set-timezone Asia/Shanghai
     check_environment
     install_dependencies
     configure_bot
