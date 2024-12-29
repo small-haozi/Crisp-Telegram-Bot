@@ -5,7 +5,6 @@ import socketio
 import requests
 import logging
 import io
-import re
 from location_names import translation_dict  # 导入词典文件
 
 from telegram.ext import ContextTypes
@@ -25,18 +24,6 @@ payload = config["openai"]["payload"]
 # 添加这一行来初始化avatars
 avatars = config.get('avatars', {})
 
-
-def find_emails(content):
-    # 简单的邮箱识别逻辑
-    words = content.split()
-    emails = [word for word in words if '@' in word and '.' in word]
-    return emails
-
-def format_content(content):
-    emails = find_emails(content)
-    for email in emails:
-        content = content.replace(email, f'`{email}`')
-    return content
 
 def print_enabled_image_services():
     enabled_services = config.get('image_upload', {}).get('enabled_services', {})
@@ -377,8 +364,7 @@ async def sendMessage(data):
 
             
         flow = []
-        formatted_content = format_content(data['content'])
-        flow.append(f"🧾*消息推送*： {formatted_content}")
+        flow.append(f"🧾*消息推送*： {data['content']}")
 
         # 仅在会话的第一条消息时发送提示
         if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
