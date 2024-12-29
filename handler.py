@@ -5,6 +5,7 @@ import socketio
 import requests
 import logging
 import io
+import re
 from location_names import translation_dict  # 导入词典文件
 
 from telegram.ext import ContextTypes
@@ -24,6 +25,10 @@ payload = config["openai"]["payload"]
 # 添加这一行来初始化avatars
 avatars = config.get('avatars', {})
 
+
+def escape_markdown_v2(text):
+    # 转义 MarkdownV2 中的特殊字符
+    return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
 def print_enabled_image_services():
     enabled_services = config.get('image_upload', {}).get('enabled_services', {})
@@ -285,6 +290,9 @@ async def createSession(data):
 
     metas = getMetas(sessionId)
     print(f"获取到的元信息: {metas}")  # 打印获取到的元信息
+
+    # 转义 metas 内容
+    metas = escape_markdown_v2(metas)
 
     if session is None:
         enableAI = False if openai is None else True
