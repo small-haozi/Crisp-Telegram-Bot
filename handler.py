@@ -56,121 +56,97 @@ def upload_image_to_telegraph(image_data):
     enabled_services = config.get('image_upload', {}).get('enabled_services', {})
     apis = [
         {
-            "url": "https://telegra.ph/upload?source=bugtracker",
-            "type": "telegraph",
-            "enabled": enabled_services.get('telegraph', True)
-        },
-        {
             "url": "https://api.imgbb.com/1/upload",
-            "type": "imgbb",
-            "enabled": enabled_services.get('imgbb', True)
+            "type": "imgbb", 
+            "enabled": enabled_services.get('imgbb', True),
+            "process_response": lambda r: r.json()['data']['url']
         },
         {
             "url": "https://file.sang.pub/api/upload",
             "type": "sang_pub",
-            "enabled": enabled_services.get('sang_pub', False)
+            "enabled": enabled_services.get('sang_pub', False),
+            "process_response": lambda r: r.text.strip()
         },
         {
             "url": f"https://api.cloudinary.com/v1_1/{config.get('image_upload', {}).get('cloudinary', {}).get('cloud_name', '')}/image/upload",
             "type": "cloudinary",
-            "enabled": enabled_services.get('cloudinary', False)
+            "enabled": enabled_services.get('cloudinary', False),
+            "process_response": lambda r: r.json()['secure_url']
+        },
+        {
+            "url": "https://telegra.ph/upload",
+            "type": "telegraph",
+            "enabled": enabled_services.get('telegraph', False),  # 默认设置为禁用
+            "process_response": lambda r: 'https://telegra.ph' + r.json()[0]['src']
         }
     ]
 
-    # 确保 image_data 是字节对象
-    if isinstance(image_data, io.BytesIO):
-        image_data = image_data.getvalue()
-    elif not isinstance(image_data, bytes):
+    # 验证图片数据
+    if not isinstance(image_data, (bytes, io.BytesIO)):
         raise ValueError("image_data 必须是 bytes 或 BytesIO 对象")
+    
+    image_bytes = image_data.getvalue() if isinstance(image_data, io.BytesIO) else image_data
 
     # 检测图片格式
     try:
-        img = Image.open(io.BytesIO(image_data))
-        img_format = img.format.lower()
-        img.close()
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            img_format = img.format.lower()
     except Exception as e:
         logging.error(f"无法检测图片格式: {str(e)}")
-        img_format = 'jpeg'  # 默认假设为JPEG
+        img_format = 'jpeg'
 
     for api in apis:
-        if not enabled_services.get(api["type"], False):
+        if not api["enabled"]:
             logging.info(f"跳过已禁用的图床服务: {api['type']}")
             continue
-        
-        # 为每次尝试创建新的 BytesIO 对象
-        image_io = io.BytesIO(image_data)
-        try:
             
-            if api["type"] == "telegraph":
-                files = {'file': ('image.' + img_format, image_data, 'image/' + img_format)}
-                response = requests.post(api["url"], files=files)
-                response.raise_for_status()
-                image_url = 'https://telegra.ph' + response.json()['src']
-                logging.info(f"成功上传到 {api['type']}: {image_url}")
-                return image_url
-
-            elif api["type"] == "sang_pub":
-                    files = {'file': (f'image.{img_format}', image_data, f'image/{img_format}')}
-                    response = requests.post(api["url"], files=files, timeout=10)
-                    response.raise_for_status()
-                    # 直接使用响应文本作为图片URL
-                    image_url = response.text.strip()
-                    if not image_url or not image_url.startswith('http'):
-                        raise ValueError(f"无效的图片URL: {image_url}")
-                    logging.info(f"成功上传到 {api['type']}: {image_url}")
-                    return image_url
+        with api_upload_context(api["type"]):
+            try:
+                if api["type"] == "imgbb":
+                    imgbb_api_key = config.get('image_upload', {}).get('imgbb_api_key')
+                    if not imgbb_api_key:
+                        logging.warning("ImgBB API密钥未设置")
+                        continue
+                        
+                    files = {'image': (f'image.{img_format}', image_bytes, f'image/{img_format}')}
+                    params = {
+                        'key': imgbb_api_key,
+                        'expiration': config.get('image_upload', {}).get('imgbb_expiration', 0)
+                    }
+                    response = requests.post(api["url"], files=files, params=params, timeout=10)
                 
-            elif api["type"] == "imgbb":
-                imgbb_api_key = config.get('image_upload', {}).get('imgbb_api_key')
-                if not imgbb_api_key:
-                    logging.warning("ImgBB API密钥未设置,跳过ImgBB上传")
-                    continue
-                
-                files = {'image': (f'image.{img_format}', image_data, f'image/{img_format}')}
-                params = {'key': imgbb_api_key}
-                
-                imgbb_expiration = config.get('image_upload', {}).get('imgbb_expiration', 0)
-                if imgbb_expiration != 0:
-                    params['expiration'] = imgbb_expiration
-                
-                response = requests.post(api["url"], files=files, params=params)
-                response.raise_for_status()  # 这将在非200状态码时抛出异常
-                image_url = response.json()['data']['url']
-                logging.info(f"成功上传到 {api['type']}: {image_url}")
-                return image_url
-
-            elif api["type"] == "cloudinary":
-                cloudinary_config = config.get('image_upload', {}).get('cloudinary', {})
-                if not all([cloudinary_config.get('cloud_name'), cloudinary_config.get('upload_preset')]):
-                    logging.warning("Cloudinary配置不完整,跳过Cloudinary上传")
-                    continue
-                
-                try:
-                    # 准备上传数据
+                elif api["type"] == "cloudinary":
+                    cloudinary_config = config.get('image_upload', {}).get('cloudinary', {})
+                    if not all([cloudinary_config.get('cloud_name'), cloudinary_config.get('upload_preset')]):
+                        logging.warning("Cloudinary配置不完整")
+                        continue
+                        
                     data = {
-                        "file": f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}",
+                        "file": f"data:image/{img_format};base64,{base64.b64encode(image_bytes).decode('utf-8')}",
                         "upload_preset": cloudinary_config['upload_preset']
                     }
+                    response = requests.post(api["url"], json=data, timeout=10)
+                
+                else:
+                    files = {'file': (f'image.{img_format}', image_bytes, f'image/{img_format}')}
+                    response = requests.post(api["url"], files=files, timeout=10)
+
+                response.raise_for_status()
+                image_url = api["process_response"](response)
+                
+                if not image_url or not image_url.startswith('http'):
+                    raise ValueError(f"无效的图片URL: {image_url}")
                     
-                    response = requests.post(api["url"], data=data)
-                    response.raise_for_status()
-                    
-                    upload_result = response.json()
-                    image_url = upload_result['secure_url']
-                    logging.info(f"成功上传到 {api['type']}: {image_url}")
-                    return image_url
-                except requests.exceptions.RequestException as e:
-                    logging.error(f"上传到 Cloudinary 失败: {str(e)}")
-                    if hasattr(e, 'response') and e.response is not None:
-                        logging.error(f"错误详情: {e.response.text}")
-        
-        except requests.exceptions.RequestException as e:
-            logging.error(f"上传到 {api['type']} 失败: {str(e)}")
-        except Exception as e:
-            logging.error(f"上传到 {api['type']} 时发生未知错误: {str(e)}")
-        finally:
-            image_io.close()
-            
+                logging.info(f"成功上传到 {api['type']}: {image_url}")
+                return image_url
+
+            except requests.exceptions.RequestException as e:
+                logging.error(f"上传到 {api['type']} 失败: {str(e)}")
+                if hasattr(e, 'response') and e.response:
+                    logging.error(f"错误详情: {e.response.text}")
+            except Exception as e:
+                logging.error(f"上传到 {api['type']} 时发生未知错误: {str(e)}")
+                
     raise Exception("所有启用的图片上传API都失败了")
 
 
@@ -183,111 +159,115 @@ def getKey(content: str):
                     return True, config["autoreply"][x]
     return False, None
 
-def escape_markdown(text):
-    """转义 Markdown 特殊字符"""
-    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+def escape_markdown(text, preserve_backticks=False):
+    """转义 Markdown 特殊字符
+    Args:
+        text: 要转义的文本
+        preserve_backticks: 是否保留反引号的特殊格式
+    """
+    if not text:  # 处理空值情况
+        return ""
+        
+    # 将文本转换为字符串
+    text = str(text)
+    
+    # 定义需要转义的特殊字符
+    special_chars = [
+        '_', '*', '[', ']', '(', ')', '~', '>', '#', '+', 
+        '-', '=', '|', '{', '}', '.', '!', ',', ':', ';'
+    ]
+    
+    # 如果不保留反引号格式，将反引号加入转义列表
+    if not preserve_backticks:
+        special_chars.append('`')
+    
+    # 转义所有特殊字符
     for char in special_chars:
-        text = text.replace(char, '\\' + char)
+        text = text.replace(char, f'\\{char}')
+        
     return text
 
 def getMetas(sessionId):
     conversation = client.website.get_conversation(websiteId, sessionId)
-
-    # 使用列表存储每行信息
-    flow = ['*Crisp消息推送*']  # 改用 Markdown 语法
-    info_added = False
-
+    
+    # 使用列表推导式构建信息流
+    flow = ['*Crisp消息推送*']
+    
     if conversation.get("error"):
-        flow.append('无法获取会话信息')
-        return '\n'.join(flow)
+        return '\n'.join(flow + ['无法获取会话信息'])
 
     data = conversation.get("data", {})
-
-    # 添加会话信息，使用 escape_markdown 处理所有可能包含特殊字符的值
-    if data.get("people_id"):
-        flow.append(f'👤*访客ID*：{escape_markdown(data["people_id"])}')
-        info_added = True
-
-    if data.get("state"):
-        flow.append(f'🔄*会话状态*：{escape_markdown(data["state"])}')
-        info_added = True
-
     metas = client.website.get_conversation_metas(websiteId, sessionId)
-
-    if metas.get("email"):
-        flow.append(f'📧*电子邮箱*： `{escape_markdown(metas["email"])}`')
-        info_added = True
-
-    if metas.get("data"):
-        if "Account" in metas["data"]:
-            flow.append(f"📧*用户账号*： `{escape_markdown(metas['data']['Account'])}`")
-            info_added = True
-        if "SubscriptionName" in metas["data"] or "Plan" in metas["data"]:
-            plan_name = metas["data"].get("SubscriptionName", metas["data"].get("Plan", ""))
-            flow.append(f"🪪*使用套餐*：{escape_markdown(plan_name)}")
-            info_added = True
-        if "UsedTraffic" in metas["data"] and ("AvailableTraffic" in metas["data"] or "AllTraffic" in metas["data"]):
-            used = escape_markdown(metas['data']['UsedTraffic'])
-            available = escape_markdown(metas["data"].get("AvailableTraffic", metas["data"].get("AllTraffic", "")))
+    
+    # 修改信息映射结构，为邮箱和账号特殊处理
+    info_mapping = [
+        ('people_id', data, '👤*访客ID*', lambda x: x),
+        ('state', data, '🔄*会话状态*', lambda x: x),
+        ('email', metas, '📧*电子邮箱*', lambda x: f'`{x}`'),
+    ]
+    
+    # 处理基本信息
+    for key, source, prefix, formatter in info_mapping:
+        if value := source.get(key):
+            escaped_value = escape_markdown(formatter(value), preserve_backticks=('`' in formatter(value)))
+            flow.append(f'{prefix}：{escaped_value}')
+    
+    # 处理元数据
+    if meta_data := metas.get("data", {}):
+        meta_mapping = [
+            ('Account', '📧*用户账号*', lambda x: f'`{x}`'),
+            ('SubscriptionName', '🪪*使用套餐*', lambda x: x),
+            ('Plan', '🪪*使用套餐*', lambda x: x),
+            ('ExpirationTime', '🪪*到期时间*', lambda x: x if x != "-" else "长期有效"),
+            ('AccountCreated', '🪪*注册时间*', lambda x: x),
+        ]
+        
+        for key, prefix, formatter in meta_mapping:
+            if value := meta_data.get(key):
+                escaped_value = escape_markdown(formatter(value), preserve_backticks=('`' in formatter(value)))
+                flow.append(f'{prefix}：{escaped_value}')
+                
+        # 处理流量信息
+        if 'UsedTraffic' in meta_data and ('AvailableTraffic' in meta_data or 'AllTraffic' in meta_data):
+            used = escape_markdown(meta_data['UsedTraffic'])
+            available = escape_markdown(meta_data.get('AvailableTraffic') or meta_data.get('AllTraffic'))
             flow.append(f"🗒*流量信息*：{used} / {available}")
-            info_added = True
-        if "SubscriptionName" in metas["data"]:
-            if "ExpirationTime" in metas["data"] and metas["data"]["ExpirationTime"] != "-":
-                flow.append(f"🪪*到期时间*：{escape_markdown(metas['data']['ExpirationTime'])}")
-            else:
-                flow.append("🪪*到期时间*：长期有效")
-            info_added = True
-        if "AccountCreated" in metas["data"]:
-            flow.append(f"🪪*注册时间*：{escape_markdown(metas['data']['AccountCreated'])}")
-            info_added = True
-
-    # 获取地理位置
-    if metas.get("device") and metas["device"].get("geolocation"):
-        geolocation = metas["device"]["geolocation"]
-        if geolocation.get("country"):
-            country = geolocation["country"]
-            translated_country = translation_dict.get(country, country)
-            flow.append(f'🇺🇸*国家*：{escape_markdown(translated_country)}')
-            info_added = True
-        if geolocation.get("region"):
-            region = geolocation["region"]
-            translated_region = translation_dict.get(region, region)
-            flow.append(f'🏙️*地区*：{escape_markdown(translated_region)}')
-            info_added = True
-        if geolocation.get("city"):
-            city = geolocation["city"]
-            translated_city = translation_dict.get(city, city)
-            flow.append(f'🌆*城市*：{escape_markdown(translated_city)}')
-            info_added = True
-        if geolocation.get("coordinates"):
-            coords = geolocation["coordinates"]
-            if coords.get("latitude") and coords.get("longitude"):
-                lat = escape_markdown(str(coords["latitude"]))
-                lon = escape_markdown(str(coords["longitude"]))
-                flow.append(f'📍*坐标*：{lat}, {lon}')
-                info_added = True
-
-    if metas.get("device"):
-        device = metas["device"]
-        if device.get("system"):
-            os_info = device["system"].get("os", {})
-            if os_info.get("name"):
-                os_name = escape_markdown(os_info["name"])
+    
+    # 处理地理位置信息
+    if device := metas.get("device"):
+        if geolocation := device.get("geolocation"):
+            geo_mapping = [
+                ('country', '🇺🇸*国家*', lambda x: translation_dict.get(x, x)),
+                ('region', '🏙️*地区*', lambda x: translation_dict.get(x, x)),
+                ('city', '🌆*城市*', lambda x: translation_dict.get(x, x)),
+            ]
+            
+            for key, prefix, translator in geo_mapping:
+                if value := geolocation.get(key):
+                    escaped_value = escape_markdown(translator(value))
+                    flow.append(f'{prefix}：{escaped_value}')
+                    
+            if coords := geolocation.get("coordinates"):
+                if all(key in coords for key in ['latitude', 'longitude']):
+                    lat = escape_markdown(str(coords["latitude"]))
+                    lon = escape_markdown(str(coords["longitude"]))
+                    flow.append(f'📍*坐标*：{lat}, {lon}')
+        
+        # 处理系统信息
+        if system := device.get("system"):
+            if os_info := system.get("os"):
+                os_name = escape_markdown(os_info.get("name", ""))
                 os_version = escape_markdown(os_info.get("version", ""))
-                flow.append(f'💻*操作系统*：{os_name} {os_version}')
-                info_added = True
-
-            browser_info = device["system"].get("browser", {})
-            if browser_info.get("name"):
-                browser_name = escape_markdown(browser_info["name"])
+                if os_name:
+                    flow.append(f'💻*操作系统*：{os_name} {os_version}')
+                    
+            if browser_info := system.get("browser"):
+                browser_name = escape_markdown(browser_info.get("name", ""))
                 browser_version = escape_markdown(browser_info.get("version", ""))
-                flow.append(f'🌐*浏览器*：{browser_name} {browser_version}')
-                info_added = True
-
-    if not info_added:
-        flow.append('无额外信息')
-
-    return '\n'.join(flow)
+                if browser_name:
+                    flow.append(f'🌐*浏览器*：{browser_name} {browser_version}')
+    
+    return '\n'.join(flow) if len(flow) > 1 else '\n'.join(flow + ['无额外信息'])
 
 
 async def createSession(data):
@@ -432,11 +412,10 @@ async def sendMessage(data):
         flow = []
         flow.append(f"📷 图片链接：{data['content']['url']}")
 
-
         # 发送图片到 Telegram 群组
         await bot.send_photo(
             groupId,
-            data["content"]["url"],
+            data['content']['url'],
             caption='\n'.join(flow),
             parse_mode='HTML',
             message_thread_id=session["topicId"]
