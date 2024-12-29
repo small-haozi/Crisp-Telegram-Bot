@@ -21,6 +21,7 @@ translation_dict = {
     "TH": "泰国",
     "VN": "越南",
     "NL": "荷兰",
+    "SE": "瑞典",
     #----------------------------
     # CN省
     "BJ": "北京",
@@ -49,6 +50,7 @@ translation_dict = {
     "HLJ": "黑龙江",
     "HA": "河南",
     "TJ": "天津",
+    "SN": "陕西",
 
     # CN市
     "Beijing": "北京",
@@ -118,6 +120,8 @@ translation_dict = {
     "Nanning": "南宁",
     "Changzhi": "长治",
     "Taishing": "泰兴",
+    "Jiaxing": "嘉兴",
+    "Quzhou": "衢州",
     #----------------------------
     # TW 省
     "TPE": "TPE(台北)",
@@ -126,6 +130,7 @@ translation_dict = {
     #----------------------------
     # HK 省
     "KKC": "KKC(九龙城区)",
+    "Hong Kong": "香港",
     "Kowloon City": "Kowloon City(九龙城)",
     #----------------------------
     # SG
@@ -134,7 +139,10 @@ translation_dict = {
     # US 省
     "WA": "WA(华盛顿)",
     "CA": "CA(加利福尼亚/加拿大)",
+    "GA": "GA(佐治亚州)",
+    "UT": "UT(犹他州)",
     # US 市
+    "Draper": "Draper(德雷珀)",
     "Atlanta": "Atlanta(亚特兰大)",
     "Boston": "Boston(波士顿)",
     "Chicago": "Chicago(芝加哥)",
@@ -237,6 +245,7 @@ translation_dict = {
     # JP 省
     # JP 市
     "Tokyo": "Tokyo(东京)",
+    "Osaka": "Osaka(大阪)",
     #----------------------------
     # CA 省
     # CA 市
@@ -247,5 +256,8 @@ translation_dict = {
     # NL 市
     "Amsterdam": "Amsterdam(阿姆斯特丹)",
     #----------------------------
+    "NSW": "NSW(新南威爾斯州)",
+    "Bungarribee": "Bungarribee(布莱克敦)",
+    "Stockholm": "Stockholm(斯德哥尔摩)",
     # 可以在这里添加更多的翻译
 }
