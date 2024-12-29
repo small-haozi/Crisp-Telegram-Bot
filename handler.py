@@ -183,10 +183,18 @@ def getKey(content: str):
                     return True, config["autoreply"][x]
     return False, None
 
+def escape_markdown(text):
+    """转义 Markdown 特殊字符"""
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in special_chars:
+        text = text.replace(char, '\\' + char)
+    return text
+
 def getMetas(sessionId):
     conversation = client.website.get_conversation(websiteId, sessionId)
 
-    flow = ['📠<b>Crisp消息推送</b>']
+    # 使用列表存储每行信息
+    flow = ['*Crisp消息推送*']  # 改用 Markdown 语法
     info_added = False
 
     if conversation.get("error"):
@@ -195,69 +203,68 @@ def getMetas(sessionId):
 
     data = conversation.get("data", {})
 
-    # 添加会话信息
+    # 添加会话信息，使用 escape_markdown 处理所有可能包含特殊字符的值
     if data.get("people_id"):
-        flow.append(f'👤<b>访客ID</b>：{data["people_id"]}')
+        flow.append(f'👤*访客ID*：{escape_markdown(data["people_id"])}')
         info_added = True
 
     if data.get("state"):
-        flow.append(f'🔄<b>会话状态</b>：{data["state"]}')
+        flow.append(f'🔄*会话状态*：{escape_markdown(data["state"])}')
         info_added = True
 
     metas = client.website.get_conversation_metas(websiteId, sessionId)
 
     if metas.get("email"):
-        flow.append(f'📧<b>电子邮箱</b>： {metas["email"]}')
+        flow.append(f'📧*电子邮箱*： `{escape_markdown(metas["email"])}`')
         info_added = True
 
     if metas.get("data"):
         if "Account" in metas["data"]:
-            flow.append(f"📧<b>用户账号</b>： {metas['data']['Account']}")
+            flow.append(f"📧*用户账号*： `{escape_markdown(metas['data']['Account'])}`")
             info_added = True
         if "SubscriptionName" in metas["data"] or "Plan" in metas["data"]:
             plan_name = metas["data"].get("SubscriptionName", metas["data"].get("Plan", ""))
-            flow.append(f"🪪<b>使用套餐</b>：{plan_name}")
+            flow.append(f"🪪*使用套餐*：{escape_markdown(plan_name)}")
             info_added = True
         if "UsedTraffic" in metas["data"] and ("AvailableTraffic" in metas["data"] or "AllTraffic" in metas["data"]):
-            available_traffic = metas["data"].get("AvailableTraffic", metas["data"].get("AllTraffic", ""))
-            flow.append(f"🗒<b>流量信息</b>：{metas['data']['UsedTraffic']} / {available_traffic}")
+            used = escape_markdown(metas['data']['UsedTraffic'])
+            available = escape_markdown(metas["data"].get("AvailableTraffic", metas["data"].get("AllTraffic", "")))
+            flow.append(f"🗒*流量信息*：{used} / {available}")
             info_added = True
         if "SubscriptionName" in metas["data"]:
             if "ExpirationTime" in metas["data"] and metas["data"]["ExpirationTime"] != "-":
-                flow.append(f"🪪<b>到期时间</b>：{metas['data']['ExpirationTime']}")
+                flow.append(f"🪪*到期时间*：{escape_markdown(metas['data']['ExpirationTime'])}")
             else:
-                flow.append("🪪<b>到期时间</b>：长期有效")
+                flow.append("🪪*到期时间*：长期有效")
             info_added = True
         if "AccountCreated" in metas["data"]:
-            flow.append(f"🪪<b>注册时间</b>：{metas['data']['AccountCreated']}")
+            flow.append(f"🪪*注册时间*：{escape_markdown(metas['data']['AccountCreated'])}")
             info_added = True
-        
 
     # 获取地理位置
     if metas.get("device") and metas["device"].get("geolocation"):
         geolocation = metas["device"]["geolocation"]
         if geolocation.get("country"):
             country = geolocation["country"]
-            # 使用词典进行翻译
             translated_country = translation_dict.get(country, country)
-            flow.append(f'🇺🇸<b>国家</b>：{translated_country}')
+            flow.append(f'🇺🇸*国家*：{escape_markdown(translated_country)}')
             info_added = True
         if geolocation.get("region"):
             region = geolocation["region"]
-            # 使用词典进行翻译
             translated_region = translation_dict.get(region, region)
-            flow.append(f'🏙️<b>地区</b>：{translated_region}')
+            flow.append(f'🏙️*地区*：{escape_markdown(translated_region)}')
             info_added = True
         if geolocation.get("city"):
             city = geolocation["city"]
-            # 使用词典进行翻译
             translated_city = translation_dict.get(city, city)
-            flow.append(f'🌆<b>城市</b>：{translated_city}')
+            flow.append(f'🌆*城市*：{escape_markdown(translated_city)}')
             info_added = True
         if geolocation.get("coordinates"):
             coords = geolocation["coordinates"]
             if coords.get("latitude") and coords.get("longitude"):
-                flow.append(f'📍<b>坐标</b>：{coords["latitude"]}, {coords["longitude"]}')
+                lat = escape_markdown(str(coords["latitude"]))
+                lon = escape_markdown(str(coords["longitude"]))
+                flow.append(f'📍*坐标*：{lat}, {lon}')
                 info_added = True
 
     if metas.get("device"):
@@ -265,13 +272,18 @@ def getMetas(sessionId):
         if device.get("system"):
             os_info = device["system"].get("os", {})
             if os_info.get("name"):
-                flow.append(f'💻<b>操作系统</b>：{os_info["name"]} {os_info.get("version", "")}')
+                os_name = escape_markdown(os_info["name"])
+                os_version = escape_markdown(os_info.get("version", ""))
+                flow.append(f'💻*操作系统*：{os_name} {os_version}')
                 info_added = True
 
             browser_info = device["system"].get("browser", {})
             if browser_info.get("name"):
-                flow.append(f'🌐<b>浏览器</b>：{browser_info["name"]} {browser_info.get("version", "")}')
+                browser_name = escape_markdown(browser_info["name"])
+                browser_version = escape_markdown(browser_info.get("version", ""))
+                flow.append(f'🌐*浏览器*：{browser_name} {browser_version}')
                 info_added = True
+
     if not info_added:
         flow.append('无额外信息')
 
@@ -295,24 +307,25 @@ async def createSession(data):
             groupId,
             metas,
             message_thread_id=topic.message_thread_id,
-            reply_markup=changeButton(sessionId, enableAI)
+            reply_markup=changeButton(sessionId, enableAI),
+            parse_mode='MarkdownV2'  # 添加这一行，指定使用 MarkdownV2 解析
         )
         botData[sessionId] = {
             'topicId': topic.message_thread_id,
             'messageId': msg.message_id,
             'enableAI': enableAI,
-            'lastMetas': metas  # 存储最后一次的元信息
+            'lastMetas': metas
         }
     else:
-        # 移除元信息变化的检查条件
         try:
             await bot.edit_message_text(
                 metas,
                 chat_id=groupId,
                 message_id=session['messageId'],
-                reply_markup=changeButton(sessionId, session.get("enableAI", False))
+                reply_markup=changeButton(sessionId, session.get("enableAI", False)),
+                parse_mode='MarkdownV2'  # 这里也添加 parse_mode
             )
-            session['lastMetas'] = metas  # 更新存储的元信息
+            session['lastMetas'] = metas
         except Exception as error:
             print(f"发生未知错误: {error}")
 
@@ -417,6 +430,8 @@ async def sendMessage(data):
     elif data["type"] == "file" and str(data["content"]["type"]).count("image") > 0:
         # 处理从 Crisp 接收到的图片
         flow = []
+        flow.append(f"📷 图片链接：{data['content']['url']}")
+
 
         # 发送图片到 Telegram 群组
         await bot.send_photo(
