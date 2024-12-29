@@ -295,7 +295,7 @@ async def createSession(data):
             metas,
             message_thread_id=topic.message_thread_id,
             reply_markup=changeButton(sessionId, enableAI),
-            parse_mode='Markdown'
+            parse_mode='MarkdownV2'
         )
         botData[sessionId] = {
             'topicId': topic.message_thread_id,
@@ -311,7 +311,7 @@ async def createSession(data):
                 chat_id=groupId,
                 message_id=session['messageId'],
                 reply_markup=changeButton(sessionId, session.get("enableAI", False)),
-                parse_mode='Markdown'
+                parse_mode='MarkdownV2'
             )
             session['lastMetas'] = metas  # 更新存储的元信息
         except Exception as error:
@@ -414,7 +414,7 @@ async def sendMessage(data):
             groupId,
             '\n'.join(flow),
             message_thread_id=session["topicId"],
-            parse_mode='Markdown'
+            parse_mode='MarkdownV2'
         )
     elif data["type"] == "file" and str(data["content"]["type"]).count("image") > 0:
         # 处理从 Crisp 接收到的图片
