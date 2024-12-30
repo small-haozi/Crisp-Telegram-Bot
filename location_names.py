@@ -51,6 +51,8 @@ translation_dict = {
     "HA": "河南",
     "TJ": "天津",
     "SN": "陕西",
+    "HE": "河北",
+    "HA": "河南",
 
     # CN市
     "Beijing": "北京",
