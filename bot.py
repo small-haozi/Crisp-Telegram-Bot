@@ -75,8 +75,29 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if msg.chat_id != config['bot']['groupId']:
         return
-    for conversation_id in context.bot_data:
-        if context.bot_data[conversation_id]['topicId'] == msg.message_thread_id:
+        
+    try:
+        # 先从内存中查找，如果找不到则从文件加载
+        session_id = None
+        for sid, data in context.bot_data.items():
+            if data.get('topicId') == msg.message_thread_id:
+                session_id = sid
+                break
+                
+        if not session_id:
+            # 从文件重新加载映射
+            mapping = handler.load_session_mapping()
+            for sid, data in mapping.items():
+                if data['topic_id'] == msg.message_thread_id:
+                    session_id = sid
+                    # 更新到内存
+                    context.bot_data[sid] = {
+                        'topicId': data['topic_id'],
+                        'enableAI': data.get('enable_ai', False)
+                    }
+                    break
+        
+        if session_id:
             if msg.text:  # 处理文本消息
                 query = {
                     "type": "text",
@@ -88,6 +109,12 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         "avatar": handler.avatars.get('human_agent', 'https://example.com/default_avatar.png')
                     }
                 }
+                # 使用找到的 session_id 发送消息
+                client.website.send_message_in_conversation(
+                    config['crisp']['website'],
+                    session_id,
+                    query
+                )
             elif msg.photo:  # 处理图片消息
                 try:
                     photo_file = await msg.photo[-1].get_file()
@@ -114,34 +141,11 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     print(f"处理图片失败: {str(e)}")
                     await msg.reply_text("发送图片失败，请稍后重试。")
                     return
-            else:
-                await msg.reply_text("不支持的消息类型。")
-                return
-
-            client.website.send_message_in_conversation(
-                config['crisp']['website'],
-                conversation_id,
-                query
-            )
-            try:
-                # 直接生成新的回复标记
-                new_reply_markup = changeButton(conversation_id, context.bot_data[conversation_id].get("enableAI", False))
-
-                # 尝试更新消息的回复标记
-                await context.bot.edit_message_reply_markup(
-                    chat_id=msg.chat_id,
-                    message_id=context.bot_data[conversation_id]['messageId'],
-                    reply_markup=new_reply_markup
-                )
-            except telegram.error.BadRequest as e:
-                if "Message is not modified" not in str(e):
-                    # 如果错误不是"消息未修改"，则记录错误
-                    logging.error(f"更新消息标记失败: {str(e)}")
-                # 如果是"消息未修改"错误，我们可以安全地忽略它
-            except Exception as e:
-                # 捕获其他可能的异常
-                logging.error(f"更新消息时出错: {str(e)}")
-            return
+        else:
+            logging.error(f"未找到对应的会话 ID，话题 ID: {msg.message_thread_id}")
+            
+    except Exception as e:
+        logging.error(f"发送消息失败: {str(e)}")
 
 async def onChange(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Parses the CallbackQuery and updates the message text."""
@@ -233,35 +237,70 @@ def main():
         signal.signal(signal.SIGINT, force_exit)
         signal.signal(signal.SIGTERM, force_exit)
 
+        logging.info("正在初始化 Bot...")
         app = Application.builder().token(config['bot']['token']).defaults(Defaults(parse_mode='HTML')).build()
+        
+        # 加载会话映射，添加错误处理
+        try:
+            session_mapping = handler.load_session_mapping()
+            for session_id, data in session_mapping.items():
+                if isinstance(data, dict) and 'topic_id' in data:  # 验证数据格式
+                    app.bot_data[session_id] = {
+                        'topicId': data['topic_id'],
+                        'messageId': data.get('message_id'),  # 使用 get 方法，避免 KeyError
+                        'enableAI': data.get('enable_ai', False)
+                    }
+        except Exception as e:
+            logging.error(f"加载会话映射失败: {str(e)}")
+            # 继续运行，不影响启动
         
         if os.getenv('RUNNER_NAME') is not None:
             return
             
-        # 定义一个回调处理函数
+        # 修改回调处理器的注册
         async def callback_handler(update, context):
-            query = update.callback_query
-            if query.data.startswith('admin_'):
-                await handler.handle_admin_callback(update, context)
-            else:
-                await onChange(update, context)
+            try:
+                query = update.callback_query
+                message = query.message
+                
+                # 检查是否是管理命令
+                if query.data.startswith('admin_'):
+                    # 管理命令只在主话题中响应
+                    if not message.is_topic_message:  # 如果不是话题消息，说明是在主话题中
+                        logging.info(f"处理管理回调: {query.data}")
+                        await handler.handle_admin_callback(update, context)
+                    else:
+                        await query.answer("此操作只能在主话题中使用")
+                else:
+                    # 其他回调正常处理
+                    await onChange(update, context)
+                    
+            except Exception as e:
+                logging.error(f"回调处理出错: {str(e)}")
+                # 添加更详细的错误日志
+                import traceback
+                logging.error(traceback.format_exc())
 
-        # 注册处理器 - 调整顺序和优先级
+        logging.info("正在注册处理器...")
+        # 注册回调处理器，提高优先级
+        app.add_handler(CallbackQueryHandler(callback_handler), group=0)  # 设置较高优先级
+        
+        # 其他处理器保持不变
         app.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND & filters.Chat(chat_id=config['bot']['groupId']) & 
-            filters.ChatType.GROUP | filters.ChatType.SUPERGROUP,
+            filters.TEXT & ~filters.COMMAND & filters.Chat(chat_id=config['bot']['groupId']),
             handler.handle_keyword_input,
             block=True
-        ), group=1)  # 给予更高优先级
+        ), group=1)
         
         app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, onReply), group=2)
-        app.add_handler(CallbackQueryHandler(callback_handler))
         
+        logging.info("正在启动 Bot...")
         app.job_queue.run_once(handler.exec, 5, name='RTM')
         print("Bot 已启动。按 Ctrl+C 停止。")
         app.run_polling(drop_pending_updates=True)
         
     except Exception as error:
+        logging.error(f"启动失败，详细错误: {str(error)}")
         logging.warning('无法启动 Telegram Bot，请确认 Bot Token 是否正确，或者是否能连接 Telegram 服务器')
         exit(1)
 
