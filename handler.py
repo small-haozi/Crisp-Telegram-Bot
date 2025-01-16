@@ -6,11 +6,17 @@ import requests
 import logging
 import io
 from location_names import translation_dict  # 导入词典文件
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from telegram.ext import ContextTypes
 from telegram.ext import MessageHandler, filters
 from PIL import Image
 from contextlib import contextmanager
+import yaml
+import subprocess
+import os
+import asyncio
+import sys
 
 
 
@@ -437,9 +443,19 @@ sio = socketio.AsyncClient(reconnection_attempts=5, logger=True)
 # Def Event Handlers
 @sio.on("connect")
 async def connect():
+    # 创建内联键盘按钮
+    keyboard = [
+        [
+            InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+            InlineKeyboardButton("新增关键字回复", callback_data="admin_keyword_add")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await callbackContext.bot.send_message(
         groupId,
         "已连接到 Crisp 服务器。",
+        reply_markup=reply_markup
     )
     await sio.emit("authentication", {
         "tier": "plugin",
@@ -449,6 +465,7 @@ async def connect():
             "message:send",
             "session:set_data"
         ]})
+
 @sio.on("unauthorized")
 async def unauthorized(data):
     print('Unauthorized: ', data)
@@ -513,3 +530,222 @@ async def exec(context: ContextTypes.DEFAULT_TYPE):
         wait_timeout=10,
     )
     await sio.wait() 
+
+# 添加新的回调处理函数
+async def handle_admin_callback(update, context):
+    """处理管理按钮的回调"""
+    query = update.callback_query
+    
+    try:
+        logging.info(f"收到管理回调: {query.data}")
+        
+        if query.data == "admin_restart_bot":
+            keyboard = [[
+                InlineKeyboardButton("确认重启", callback_data="admin_confirm_restart"),
+                InlineKeyboardButton("取消", callback_data="admin_cancel_restart")
+            ]]
+            await query.message.edit_text(
+                "确定要重启 Bot 吗？\n"
+                "请选择以下操作：",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            await query.answer("请确认是否重启")
+        
+        elif query.data == "admin_confirm_restart":
+            try:
+                await query.answer("正在执行重启...")
+                await query.message.edit_text("Bot 正在重启...")
+                
+                # 先执行 daemon-reload，然后强制结束进程并重启
+                subprocess.run(['systemctl', 'daemon-reload'], check=True)
+                subprocess.run(['systemctl', 'kill', '-s', 'SIGKILL', 'bot.service'], check=True)
+                subprocess.Popen(['systemctl', 'start', 'bot.service'])
+                
+                # 立即退出当前进程
+                sys.exit(0)
+                
+            except Exception as e:
+                error_message = f"重启失败: {str(e)}"
+                logging.error(error_message)
+                await query.message.edit_text(error_message)
+        
+        elif query.data == "admin_cancel_restart":
+            # 恢复原始按钮
+            keyboard = [
+                [
+                    InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                    InlineKeyboardButton("新增关键字回复", callback_data="admin_keyword_add")
+                ]
+            ]
+            await query.message.edit_text(
+                "已连接到 Crisp 服务器。",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            await query.answer("已取消重启")
+        
+        elif query.data == "admin_keyword_add":
+            # 保存当前消息的信息
+            context.user_data['waiting_for'] = 'keyword'
+            context.user_data['original_message_id'] = query.message.message_id
+            context.user_data['original_chat_id'] = query.message.chat_id
+            
+            # 更新原消息为输入提示
+            keyboard = [[
+                InlineKeyboardButton("取消", callback_data="admin_cancel_keyword")
+            ]]
+            await query.message.edit_text(
+                "请输入关键字(多个关键字用'|'分隔)：\n"
+                "例如：你好|在吗\n\n"
+                "注意：直接输入关键字，或点击取消返回",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            await query.answer("请输入关键字")
+            
+        elif query.data == "admin_cancel_keyword":
+            # 恢复原始消息和按钮
+            keyboard = [
+                [
+                    InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                    InlineKeyboardButton("新增关键字回复", callback_data="admin_keyword_add")
+                ]
+            ]
+            await query.message.edit_text(
+                "已连接到 Crisp 服务器。",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            # 清除状态
+            context.user_data.clear()
+            await query.answer("已取消操作")
+            
+    except Exception as e:
+        error_message = f"处理回调时出错: {str(e)}"
+        logging.error(error_message)
+        try:
+            await query.answer(error_message[:200])
+            await query.message.reply_text(error_message)
+        except:
+            logging.error("无法发送错误消息")
+
+# 修改关键字输入处理函数
+async def handle_keyword_input(update, context):
+    """处理用户输入的关键字和回复"""
+    message = update.message
+    
+    # 检查是否是在正确的群组中
+    if message.chat_id != config['bot']['groupId']:
+        return
+        
+    # 检查是否在等待输入状态
+    if 'waiting_for' not in context.user_data:
+        return
+    
+    logging.info(f"处理关键字输入: {message.text}, 当前状态: {context.user_data['waiting_for']}")
+    
+    try:
+        if context.user_data['waiting_for'] == 'keyword':
+            # 保存关键字并等待回复内容
+            context.user_data['keyword'] = message.text
+            context.user_data['waiting_for'] = 'reply'
+            
+            # 更新原消息为等待回复状态
+            keyboard = [[
+                InlineKeyboardButton("取消", callback_data="admin_cancel_keyword")
+            ]]
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=context.user_data['original_chat_id'],
+                    message_id=context.user_data['original_message_id'],
+                    text=f"✅ 已记录关键字：{message.text}\n"
+                         f"请输入对应的回复内容：\n\n"
+                         f"注意：直接输入回复内容，或点击取消返回",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+            except Exception as e:
+                logging.error(f"更新消息失败: {str(e)}")
+            
+            # 删除用户的输入消息
+            try:
+                await message.delete()
+            except:
+                pass
+            
+        elif context.user_data['waiting_for'] == 'reply':
+            keyword = context.user_data['keyword']
+            reply = message.text
+            
+            try:
+                # 更新配置文件
+                if 'autoreply' not in config:
+                    config['autoreply'] = {}
+                config['autoreply'][keyword] = reply
+                
+                # 保存到配置文件
+                with open('config.yml', 'w', encoding='utf-8') as f:
+                    yaml.dump(config, f, allow_unicode=True)
+                
+                # 更新原消息为成功状态
+                keyboard = [
+                    [
+                        InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                        InlineKeyboardButton("新增关键字回复", callback_data="admin_keyword_add")
+                    ]
+                ]
+                
+                success_message = (
+                    f"✅ 已成功添加新的关键字回复：\n\n"
+                    f"🔑 关键字：{keyword}\n"
+                    f"💬 回复内容：{reply}\n\n"
+                    f"可以继续添加新的关键字回复或执行其他操作"
+                )
+                
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=context.user_data['original_chat_id'],
+                        message_id=context.user_data['original_message_id'],
+                        text=success_message,
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+                except Exception as e:
+                    if "Message is not modified" not in str(e):
+                        logging.error(f"更新消息失败: {str(e)}")
+                
+                # 删除用户的输入消息
+                try:
+                    await message.delete()
+                except:
+                    pass
+                
+            except Exception as e:
+                error_message = f"❌ 保存配置失败: {str(e)}"
+                await context.bot.edit_message_text(
+                    chat_id=context.user_data['original_chat_id'],
+                    message_id=context.user_data['original_message_id'],
+                    text=error_message,
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("重试", callback_data="admin_keyword_add"),
+                        InlineKeyboardButton("取消", callback_data="admin_cancel_keyword")
+                    ]])
+                )
+                logging.error(f"保存配置失败: {str(e)}")
+            finally:
+                # 清除用户状态
+                context.user_data.clear()
+                
+    except Exception as e:
+        error_message = f"处理关键字输入时出错: {str(e)}"
+        logging.error(error_message)
+        # 恢复原始按钮状态
+        keyboard = [
+            [
+                InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                InlineKeyboardButton("新增关键字回复", callback_data="admin_keyword_add")
+            ]
+        ]
+        await context.bot.edit_message_text(
+            chat_id=context.user_data['original_chat_id'],
+            message_id=context.user_data['original_message_id'],
+            text=f"❌ 操作失败: {error_message}\n\n请重试",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        # 清除用户状态
+        context.user_data.clear() 
