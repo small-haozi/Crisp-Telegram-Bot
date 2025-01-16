@@ -137,6 +137,14 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             "avatar": handler.avatars.get('human_agent', 'https://example.com/default_avatar.png')
                         }
                     }
+                    
+                    # 使用找到的 session_id 发送消息
+                    client.website.send_message_in_conversation(
+                        config['crisp']['website'],
+                        session_id,
+                        query
+                    )
+                    
                 except Exception as e:
                     print(f"处理图片失败: {str(e)}")
                     await msg.reply_text("发送图片失败，请稍后重试。")
@@ -240,20 +248,21 @@ def main():
         logging.info("正在初始化 Bot...")
         app = Application.builder().token(config['bot']['token']).defaults(Defaults(parse_mode='HTML')).build()
         
-        # 加载会话映射，添加错误处理
+        # 加载并同步会话映射
         try:
             session_mapping = handler.load_session_mapping()
             for session_id, data in session_mapping.items():
-                if isinstance(data, dict) and 'topic_id' in data:  # 验证数据格式
+                if isinstance(data, dict) and 'topic_id' in data:
                     app.bot_data[session_id] = {
                         'topicId': data['topic_id'],
-                        'messageId': data.get('message_id'),  # 使用 get 方法，避免 KeyError
-                        'enableAI': data.get('enable_ai', False)
+                        'messageId': data.get('message_id'),
+                        'enableAI': data.get('enable_ai', False),
+                        'first_message': False  # 设置为 False 避免重复发送提示
                     }
+                    logging.info(f"已恢复会话映射: {session_id} -> {data['topic_id']}")
         except Exception as e:
             logging.error(f"加载会话映射失败: {str(e)}")
-            # 继续运行，不影响启动
-        
+
         if os.getenv('RUNNER_NAME') is not None:
             return
             
@@ -267,7 +276,6 @@ def main():
                 if query.data.startswith('admin_'):
                     # 管理命令只在主话题中响应
                     if not message.is_topic_message:  # 如果不是话题消息，说明是在主话题中
-                        logging.info(f"处理管理回调: {query.data}")
                         await handler.handle_admin_callback(update, context)
                     else:
                         await query.answer("此操作只能在主话题中使用")
@@ -277,22 +285,23 @@ def main():
                     
             except Exception as e:
                 logging.error(f"回调处理出错: {str(e)}")
-                # 添加更详细的错误日志
-                import traceback
-                logging.error(traceback.format_exc())
 
         logging.info("正在注册处理器...")
-        # 注册回调处理器，提高优先级
-        app.add_handler(CallbackQueryHandler(callback_handler), group=0)  # 设置较高优先级
+        # 注册消息处理器，合并图片和文本处理
+        app.add_handler(MessageHandler(
+            (filters.TEXT | filters.PHOTO) & filters.Chat(chat_id=config['bot']['groupId']),
+            onReply,
+            block=True
+        ), group=1)
         
-        # 其他处理器保持不变
+        # 注册关键字处理器
         app.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND & filters.Chat(chat_id=config['bot']['groupId']),
             handler.handle_keyword_input,
             block=True
-        ), group=1)
+        ), group=2)
         
-        app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, onReply), group=2)
+        app.add_handler(CallbackQueryHandler(callback_handler))
         
         logging.info("正在启动 Bot...")
         app.job_queue.run_once(handler.exec, 5, name='RTM')
