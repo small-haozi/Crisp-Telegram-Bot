@@ -443,11 +443,15 @@ sio = socketio.AsyncClient(reconnection_attempts=5, logger=True)
 # Def Event Handlers
 @sio.on("connect")
 async def connect():
-    # 创建内联键盘按钮
+    # 创建内联键盘按钮，添加新的按钮
     keyboard = [
         [
             InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
-            InlineKeyboardButton("新增关键字回复", callback_data="admin_keyword_add")
+            InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+        ],
+        [
+            InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+            InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -617,6 +621,128 @@ async def handle_admin_callback(update, context):
             context.user_data.clear()
             await query.answer("已取消操作")
             
+        elif query.data == "admin_keyword_edit":
+            if not config.get('autoreply'):
+                await query.message.edit_text(
+                    "当前没有任何关键字配置。",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("返回", callback_data="admin_back_to_main")
+                    ]])
+                )
+                return
+                
+            # 创建关键字选择按钮，使用索引而不是完整关键字
+            keyboard = []
+            context.user_data['edit_keywords'] = list(config['autoreply'].keys())
+            for idx, keyword in enumerate(context.user_data['edit_keywords']):
+                display_keyword = (keyword[:20] + '...') if len(keyword) > 20 else keyword
+                keyboard.append([InlineKeyboardButton(
+                    display_keyword,
+                    callback_data=f"admin_edit_{idx}"  # 使用索引作为回调数据
+                )])
+            keyboard.append([InlineKeyboardButton("返回", callback_data="admin_back_to_main")])
+            
+            await query.message.edit_text(
+                "请选择要修改的关键字：",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            
+        elif query.data.startswith("admin_edit_"):
+            # 从索引获取关键字
+            try:
+                idx = int(query.data.replace("admin_edit_", ""))
+                keyword = context.user_data['edit_keywords'][idx]
+                context.user_data['editing_keyword'] = keyword
+                context.user_data['waiting_for'] = 'edit_reply'
+                context.user_data['original_message_id'] = query.message.message_id
+                context.user_data['original_chat_id'] = query.message.chat_id
+                
+                current_reply = config['autoreply'].get(keyword, "")
+                await query.message.edit_text(
+                    f"当前关键字：{keyword}\n"
+                    f"当前回复：{current_reply}\n\n"
+                    f"请输入新的回复内容：",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("取消", callback_data="admin_back_to_main")
+                    ]])
+                )
+            except (ValueError, IndexError) as e:
+                logging.error(f"处理编辑索引时出错: {str(e)}")
+                await query.answer("无效的选择")
+                
+        elif query.data == "admin_keyword_delete":
+            if not config.get('autoreply'):
+                await query.message.edit_text(
+                    "当前没有任何关键字配置。",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("返回", callback_data="admin_back_to_main")
+                    ]])
+                )
+                return
+                
+            # 使用相同的索引方法处理删除
+            keyboard = []
+            context.user_data['delete_keywords'] = list(config['autoreply'].keys())
+            for idx, keyword in enumerate(context.user_data['delete_keywords']):
+                display_keyword = (keyword[:20] + '...') if len(keyword) > 20 else keyword
+                keyboard.append([InlineKeyboardButton(
+                    f"❌ {display_keyword}",
+                    callback_data=f"admin_del_{idx}"  # 使用索引作为回调数据
+                )])
+            keyboard.append([InlineKeyboardButton("返回", callback_data="admin_back_to_main")])
+            
+            await query.message.edit_text(
+                "请选择要删除的关键字：",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            
+        elif query.data.startswith("admin_del_"):
+            try:
+                idx = int(query.data.replace("admin_del_", ""))
+                keyword = context.user_data['delete_keywords'][idx]
+                
+                if keyword in config.get('autoreply', {}):
+                    del config['autoreply'][keyword]
+                    # 保存配置
+                    with open('config.yml', 'w', encoding='utf-8') as f:
+                        yaml.dump(config, f, allow_unicode=True)
+                    
+                    await query.message.edit_text(
+                        f"✅ 已删除关键字：{keyword}",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("返回", callback_data="admin_back_to_main")
+                        ]])
+                    )
+                else:
+                    await query.message.edit_text(
+                        "❌ 关键字不存在",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("返回", callback_data="admin_back_to_main")
+                        ]])
+                    )
+            except (ValueError, IndexError) as e:
+                logging.error(f"处理删除索引时出错: {str(e)}")
+                await query.answer("无效的选择")
+                
+        elif query.data == "admin_back_to_main":
+            # 恢复主菜单
+            keyboard = [
+                [
+                    InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                    InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+                ],
+                [
+                    InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+                    InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+                ]
+            ]
+            await query.message.edit_text(
+                "已连接到 Crisp 服务器。",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            # 清除用户状态
+            context.user_data.clear()
+            
     except Exception as e:
         error_message = f"处理回调时出错: {str(e)}"
         logging.error(error_message)
@@ -724,6 +850,64 @@ async def handle_keyword_input(update, context):
                     reply_markup=InlineKeyboardMarkup([[
                         InlineKeyboardButton("重试", callback_data="admin_keyword_add"),
                         InlineKeyboardButton("取消", callback_data="admin_cancel_keyword")
+                    ]])
+                )
+                logging.error(f"保存配置失败: {str(e)}")
+            finally:
+                # 清除用户状态
+                context.user_data.clear()
+                
+        elif context.user_data['waiting_for'] == 'edit_reply':
+            keyword = context.user_data['editing_keyword']
+            new_reply = message.text
+            
+            try:
+                # 更新配置
+                config['autoreply'][keyword] = new_reply
+                
+                # 保存到配置文件
+                with open('config.yml', 'w', encoding='utf-8') as f:
+                    yaml.dump(config, f, allow_unicode=True)
+                
+                # 更新消息
+                keyboard = [
+                    [
+                        InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                        InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+                    ],
+                    [
+                        InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+                        InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+                    ]
+                ]
+                
+                success_message = (
+                    f"✅ 已成功修改关键字回复：\n\n"
+                    f"🔑 关键字：{keyword}\n"
+                    f"💬 新的回复内容：{new_reply}"
+                )
+                
+                await context.bot.edit_message_text(
+                    chat_id=context.user_data['original_chat_id'],
+                    message_id=context.user_data['original_message_id'],
+                    text=success_message,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                
+                # 删除用户的输入消息
+                try:
+                    await message.delete()
+                except:
+                    pass
+                    
+            except Exception as e:
+                error_message = f"❌ 保存配置失败: {str(e)}"
+                await context.bot.edit_message_text(
+                    chat_id=context.user_data['original_chat_id'],
+                    message_id=context.user_data['original_message_id'],
+                    text=error_message,
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("返回", callback_data="admin_back_to_main")
                     ]])
                 )
                 logging.error(f"保存配置失败: {str(e)}")
