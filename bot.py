@@ -234,11 +234,29 @@ def main():
         signal.signal(signal.SIGTERM, force_exit)
 
         app = Application.builder().token(config['bot']['token']).defaults(Defaults(parse_mode='HTML')).build()
-        # 启动 Bot
+        
         if os.getenv('RUNNER_NAME') is not None:
             return
-        app.add_handler(MessageHandler(filters.TEXT  | filters.PHOTO, onReply))
-        app.add_handler(CallbackQueryHandler(onChange))
+            
+        # 定义一个回调处理函数
+        async def callback_handler(update, context):
+            query = update.callback_query
+            if query.data.startswith('admin_'):
+                await handler.handle_admin_callback(update, context)
+            else:
+                await onChange(update, context)
+
+        # 注册处理器 - 调整顺序和优先级
+        app.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND & filters.Chat(chat_id=config['bot']['groupId']) & 
+            filters.ChatType.GROUP | filters.ChatType.SUPERGROUP,
+            handler.handle_keyword_input,
+            block=True
+        ), group=1)  # 给予更高优先级
+        
+        app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, onReply), group=2)
+        app.add_handler(CallbackQueryHandler(callback_handler))
+        
         app.job_queue.run_once(handler.exec, 5, name='RTM')
         print("Bot 已启动。按 Ctrl+C 停止。")
         app.run_polling(drop_pending_updates=True)
