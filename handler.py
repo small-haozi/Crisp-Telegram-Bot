@@ -17,7 +17,7 @@ import subprocess
 import os
 import asyncio
 import sys
-from functools import wraps
+import telegram  # 添加这行在文件开头
 
 
 
@@ -353,7 +353,7 @@ async def createSession(data):
                 parse_mode='MarkdownV2'
             )
             
-            # 保存映射到文件和内存
+            # 保存映射到文件和内存，只保存必要信息
             save_session_mapping(
                 session_id=session_id,
                 topic_id=topic.message_thread_id,
@@ -364,26 +364,23 @@ async def createSession(data):
             botData[session_id] = {
                 'topicId': topic.message_thread_id,
                 'messageId': msg.message_id,
-                'enableAI': enableAI
+                'enableAI': enableAI,
+                'first_message': True  # 新会话设置为 True
             }
 
         else:
             try:
+                # 直接更新消息
                 await bot.edit_message_text(
                     metas,
                     chat_id=groupId,
                     message_id=session['messageId'],
-                    reply_markup=changeButton(sessionId, session.get("enableAI", False)),
+                    reply_markup=changeButton(session_id, session.get("enableAI", False)),
                     parse_mode='MarkdownV2'
                 )
-                session['lastMetas'] = metas
-                # 更新存储的元信息
-                save_session_mapping(
-                    session_id=session_id,
-                    topic_id=session['topicId'],
-                    message_id=session['messageId'],
-                    enable_ai=session.get("enableAI", False)
-                )
+            except telegram.error.BadRequest as e:
+                if "Message is not modified" not in str(e):
+                    logging.error(f"更新元信息失败: {str(e)}")
             except Exception as error:
                 logging.error(f"更新元信息失败: {str(error)}")
 
@@ -392,13 +389,52 @@ async def createSession(data):
 
 # 新增函数：处理 Telegram 发来的图片
 async def handle_telegram_photo(update, context):
-    # 构造与 sendMessage 函数兼容的数据结构
-    data = {
-        "type": "photo",
-        "photo": update.message.photo[-1],
-        "session_id": context.user_data.get('current_session_id')  # 假设您在某处存储了当前会话ID
-    }
-    await sendMessage(data)
+    # 直接处理图片上传和发送
+    try:
+        msg = update.message
+        
+        # 从 bot_data 中查找 session_id
+        session_id = None
+        for sid, sdata in context.bot_data.items():
+            if sdata.get('topicId') == msg.message_thread_id:
+                session_id = sid
+                break
+        
+        if session_id:
+            # 上传图片
+            photo_file = await msg.photo[-1].get_file()
+            image_bytes = await photo_file.download_as_bytearray()
+
+            print("开始上传图片")
+            image_url = upload_image_to_telegraph(io.BytesIO(image_bytes))
+            print(f"图片上传成功，URL: {image_url}")
+            
+            markdown_image = f"[![image]({image_url})]({image_url}) \n点击图片可查看高清大图"
+            
+            query = {
+                "type": "text",
+                "content": markdown_image,
+                "from": "operator",
+                "origin": "chat",
+                "user": {
+                    "nickname": '人工客服',
+                    "avatar": avatars.get('human_agent', 'https://example.com/default_avatar.png')
+                }
+            }
+            
+            # 直接发送消息
+            client.website.send_message_in_conversation(
+                config['crisp']['website'],
+                session_id,
+                query
+            )
+        else:
+            logging.error(f"未找到对应的会话 ID，话题 ID: {msg.message_thread_id}")
+            await msg.reply_text("发送图片失败：未找到对应的会话")
+            
+    except Exception as e:
+        logging.error(f"处理图片失败: {str(e)}")
+        await update.message.reply_text("发送图片失败，请稍后重试。")
 
 
 async def sendMessage(data):
@@ -504,16 +540,6 @@ async def sendMessage(data):
     else:
         print("Unhandled Message Type : ", data["type"])
 
-async def handle_telegram_photo(update, context):
-    # 构造与 sendMessage 函数兼容的数据结构
-    data = {
-        "type": "photo",
-        "photo": update.message.photo[-1],
-        "session_id": context.user_data.get('current_session_id')
-    }
-    await sendMessage(data)
-
-
 sio = socketio.AsyncClient(reconnection_attempts=5, logger=True)
 # Def Event Handlers
 @sio.on("connect")
@@ -527,9 +553,6 @@ async def connect():
         [
             InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
             InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
-        ],
-        [
-            InlineKeyboardButton("🗑️ 清除所有话题", callback_data="admin_clear_all")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -596,16 +619,12 @@ async def exec(context: ContextTypes.DEFAULT_TYPE):
     # 输出启用的图床服务信息
     print_enabled_image_services()
 
-    # 添加处理图片的处理程序
-    context.application.add_handler(MessageHandler(filters.PHOTO, handle_telegram_photo))
-
     # 发送启动消息到默认话题
     await callbackContext.bot.send_message(
         groupId,
         text="机器人已启动"
     )
 
-    # await sendAllUnread()
     await sio.connect(
         getCrispConnectEndpoints(),
         transports="websocket",
@@ -653,7 +672,7 @@ async def handle_admin_callback(update, context):
                 await query.message.edit_text(error_message)
             
         elif query.data == "admin_cancel_restart":
-            # 使用完整的五按钮布局（包括清除按钮）
+            # 使用完整的四按钮布局
             keyboard = [
                 [
                     InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
@@ -662,9 +681,6 @@ async def handle_admin_callback(update, context):
                 [
                     InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
                     InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
-                ],
-                [
-                    InlineKeyboardButton("🗑️ 清除所有话题", callback_data="admin_clear_all")
                 ]
             ]
             await query.message.edit_text(
@@ -815,7 +831,7 @@ async def handle_admin_callback(update, context):
                 await query.answer("无效的选择")
                 
         elif query.data == "admin_back_to_main":
-            # 恢复主菜单，添加清除按钮
+            # 恢复主菜单
             keyboard = [
                 [
                     InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
@@ -824,9 +840,6 @@ async def handle_admin_callback(update, context):
                 [
                     InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
                     InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
-                ],
-                [
-                    InlineKeyboardButton("🗑️ 清除所有话题", callback_data="admin_clear_all")
                 ]
             ]
             await query.message.edit_text(
@@ -836,65 +849,6 @@ async def handle_admin_callback(update, context):
             # 清除用户状态
             context.user_data.clear()
             
-        elif query.data == "admin_clear_all":
-            # 添加确认按钮
-            keyboard = [[
-                InlineKeyboardButton("⚠️ 确认清除", callback_data="admin_confirm_clear"),
-                InlineKeyboardButton("取消", callback_data="admin_back_to_main")
-            ]]
-            await query.message.edit_text(
-                "⚠️ 警告：此操作将清除所有话题和映射关系！\n"
-                "此操作不可恢复，请确认是否继续？",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-            
-        elif query.data == "admin_confirm_clear":
-            try:
-                logging.info("开始清除操作")
-                
-                # 先恢复主菜单
-                keyboard = [
-                    [
-                        InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
-                        InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
-                    ],
-                    [
-                        InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
-                        InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
-                    ],
-                    [
-                        InlineKeyboardButton("🗑️ 清除所有话题", callback_data="admin_clear_all")
-                    ]
-                ]
-                
-                await query.message.edit_text(
-                    "已连接到 Crisp 服务器。",
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-
-                # 发送新的状态消息
-                status_message = await query.message.reply_text(
-                    "🗑️ 正在清除...\n"
-                    "⏳ 正在准备清除操作...\n"
-                    "⚠️ 清除过程无法中断，如需停止请重启 Bot"
-                )
-
-                # 在这里添加一个立即返回，让按钮可以继续响应
-                await query.answer("开始清除操作，请等待...")
-
-                # 创建一个后台任务来执行清除操作
-                context.application.create_task(
-                    clear_topics(context, status_message, config['bot']['groupId'])
-                )
-                
-                # 立即返回，不等待清除完成
-                return
-
-            except Exception as e:
-                error_message = f"清除失败: {str(e)}"
-                logging.error(error_message)
-                await query.message.reply_text(f"❌ {error_message}")
-
     except Exception as e:
         error_message = f"处理回调时出错: {str(e)}"
         logging.error(error_message)
@@ -903,120 +857,6 @@ async def handle_admin_callback(update, context):
             await query.message.reply_text(error_message)
         except:
             logging.error("无法发送错误消息")
-
-# 在文件开头添加重试装饰器
-def with_retry(max_retries=3, delay=1):
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            retries = 0
-            while retries < max_retries:
-                try:
-                    return await func(*args, **kwargs)
-                except Exception as e:
-                    retries += 1
-                    if retries == max_retries:
-                        logging.error(f"重试{max_retries}次后仍然失败: {str(e)}")
-                        raise
-                    logging.warning(f"操作失败，{delay}秒后重试 ({retries}/{max_retries}): {str(e)}")
-                    await asyncio.sleep(delay)
-            return None
-        return wrapper
-    return decorator
-
-@with_retry(max_retries=3, delay=2)
-async def clear_topics(context, status_message, group_id):
-    try:
-        # 获取所有话题
-        chat = await context.bot.get_chat(group_id)
-        if chat.is_forum:
-            # 获取最新的话题ID
-            temp_topic = await context.bot.create_forum_topic(
-                chat_id=group_id,
-                name="临时话题"
-            )
-            latest_id = temp_topic.message_thread_id
-            await context.bot.delete_forum_topic(
-                chat_id=group_id,
-                message_thread_id=latest_id
-            )
-            
-            # 清除映射关系
-            if os.path.exists('session_mapping.yml'):
-                os.remove('session_mapping.yml')
-            context.bot_data.clear()
-            
-            # 执行清除操作
-            deleted_count = 0
-            failed_count = 0
-            total_count = latest_id
-            batch_size = 5
-            last_status = ""
-            
-            # 添加错误处理和重试
-            for start_id in range(latest_id, 0, -batch_size):
-                try:
-                    end_id = max(start_id - batch_size + 1, 1)
-                    for msg_id in range(start_id, end_id - 1, -1):
-                        try:
-                            await context.bot.delete_forum_topic(
-                                chat_id=group_id,
-                                message_thread_id=msg_id
-                            )
-                            deleted_count += 1
-                            logging.info(f"成功删除话题 ID: {msg_id}")
-                        except Exception as e:
-                            if "Topic_id_invalid" not in str(e):
-                                failed_count += 1
-                                logging.error(f"删除话题 {msg_id} 失败: {str(e)}")
-                            continue
-
-                        await asyncio.sleep(0.05)
-
-                    # 更新状态消息
-                    new_status = (
-                        f"🗑️ 正在清除...\n"
-                        f"✅ 已清除映射关系\n"
-                        f"⏳ 正在删除话题 ({deleted_count}/{total_count})\n"
-                        f"❌ 失败 {failed_count} 个\n"
-                        f"⚠️ 清除过程无法中断，如需停止请重启 Bot"
-                    )
-                    
-                    if new_status != last_status:
-                        try:
-                            await status_message.edit_text(new_status)
-                            last_status = new_status
-                        except Exception as e:
-                            if "Message is not modified" not in str(e):
-                                logging.error(f"更新状态消息失败: {str(e)}")
-                            continue
-
-                    await asyncio.sleep(0.2)
-                except Exception as e:
-                    logging.error(f"处理批次 {start_id} 时出错: {str(e)}")
-                    continue
-
-            # 完成清除
-            try:
-                await status_message.edit_text(
-                    f"✅ 清除完成\n"
-                    f"✅ 已清除映射关系\n"
-                    f"✅ 已删除 {deleted_count} 个话题\n"
-                    f"❌ 失败 {failed_count} 个\n"
-                    f"✨ 操作已完成"
-                )
-            except Exception as e:
-                logging.error(f"更新最终状态消息失败: {str(e)}")
-
-    except Exception as e:
-        logging.error(f"清除过程出错: {str(e)}")
-        try:
-            await status_message.edit_text(
-                f"❌ 清除过程出错: {str(e)}\n"
-                f"✅ 已删除 {deleted_count} 个话题"
-            )
-        except:
-            logging.error("无法更新错误状态消息")
 
 # 修改关键字输入处理函数
 async def handle_keyword_input(update, context):
@@ -1202,23 +1042,3 @@ async def handle_keyword_input(update, context):
         )
         # 清除用户状态
         context.user_data.clear() 
-
-class ClearingControl:
-    def __init__(self):
-        self._stop_requested = False
-        logging.info("初始化 ClearingControl")
-
-    def start(self):
-        self._stop_requested = False
-        logging.info("开始清除操作，重置停止标志")
-
-    def request_stop(self):
-        logging.info("收到停止请求")
-        self._stop_requested = True
-        logging.info(f"停止标志已设置为: {self._stop_requested}")
-
-    def should_stop(self):
-        return self._stop_requested
-
-# 创建全局控制器
-clearing_control = ClearingControl() 
