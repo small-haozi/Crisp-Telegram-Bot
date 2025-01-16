@@ -273,7 +273,8 @@ stop() {
     fi
     
     echo -e "${YELLOW}正在停止 Bot 服务...${NC}"
-    systemctl stop bot.service
+    # 直接使用 SIGKILL 强制结束进程
+    systemctl kill -s SIGKILL bot.service 2>/dev/null
     
     if wait_for_service_status "inactive"; then
         echo -e "${GREEN}Bot 服务已停止。${NC}"
