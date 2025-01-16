@@ -151,10 +151,13 @@ configure_bot() {
 add_cron_job() {
     echo -e "${YELLOW}正在添加计划任务...${NC}"
     
-    # 检查当前用户的 crontab
-    (crontab -l 2>/dev/null; echo "30 3 * * * /usr/bin/systemctl restart $SERVICE_NAME") | crontab -
+    # 创建包含所有命令的 cron 任务
+    CRON_CMD="30 3 * * * systemctl daemon-reload; systemctl kill -s SIGKILL bot.service 2>/dev/null; sleep 0.5; systemctl start bot.service"
     
-    echo -e "${GREEN}计划任务已添加，每天 3:30 重启 Bot 服务${NC}"
+    # 添加到 crontab
+    (crontab -l 2>/dev/null | grep -v "bot.service"; echo "$CRON_CMD") | crontab -
+    
+    echo -e "${GREEN}计划任务已添加，每天 3:30 快速重启 Bot 服务${NC}"
 }
 
 # 安装函数
@@ -202,46 +205,93 @@ EOL
     echo -e "${GREEN}安装完成并已启动服务${NC}"
 }
 
-# 启动服务函数
-start() {
-    echo -e "${YELLOW}正在启动 crispbot 服务...${NC}"
-    sudo systemctl daemon-reload
-    sudo systemctl start $SERVICE_NAME
+# 添加一个等待服务状态的函数，带超时机制
+wait_for_service_status() {
+    local desired_status=$1  # "active" 或 "inactive"
+    local timeout=10         # 最大等待秒数
+    local counter=0
     
-    # 等待服务重启完成
-    while ! systemctl is-active --quiet $SERVICE_NAME; do
-        sleep 1
+    while [ $counter -lt $timeout ]; do
+        if [ "$desired_status" = "active" ]; then
+            systemctl is-active --quiet bot.service && return 0
+        else
+            ! systemctl is-active --quiet bot.service && return 0
+        fi
+        sleep 0.5
+        counter=$((counter + 1))
     done
-    
-    echo -e "${GREEN}启动完成${NC}"
-    check_status
+    return 1  # 超时
 }
 
-# 重启服务函数
+# 优化后的启动函数
+start() {
+    if systemctl is-active --quiet bot.service; then
+        echo -e "${YELLOW}Bot 已经在运行中。${NC}"
+        return
+    fi
+    
+    echo -e "${YELLOW}正在启动 Bot 服务...${NC}"
+    systemctl daemon-reload
+    systemctl start bot.service
+    
+    if wait_for_service_status "active"; then
+        echo -e "${GREEN}Bot 已成功启动！${NC}"
+    else
+        echo -e "${RED}Bot 启动超时，请检查日志文件。${NC}"
+    fi
+}
+
+# 优化后的重启函数
 restart() {
     echo -e "${YELLOW}正在重启 Bot 服务...${NC}"
-    sudo systemctl daemon-reload
-    sudo systemctl restart $SERVICE_NAME
     
-    # 等待服务重启完成
-    while ! systemctl is-active --quiet $SERVICE_NAME; do
-        sleep 1
-    done
+    # 先重新加载 systemd 配置
+    systemctl daemon-reload
     
-    echo -e "${GREEN}重启完成${NC}"
-    check_status
+    # 直接使用 SIGKILL 强制结束进程
+    systemctl kill -s SIGKILL bot.service 2>/dev/null
+    
+    # 短暂等待确保进程已经结束
+    sleep 0.5
+    
+    # 启动服务
+    systemctl start bot.service
+    
+    # 使用更短的超时检查
+    if wait_for_service_status "active"; then
+        echo -e "${GREEN}Bot 已成功重启！${NC}"
+    else
+        echo -e "${RED}Bot 启动失败，请检查日志文件。${NC}"
+    fi
 }
 
-# 停止服务函数
+# 优化后的停止函数
 stop() {
+    if ! systemctl is-active --quiet bot.service; then
+        echo -e "${YELLOW}Bot 服务未在运行。${NC}"
+        return
+    fi
+    
     echo -e "${YELLOW}正在停止 Bot 服务...${NC}"
-    sudo systemctl stop $SERVICE_NAME
-    echo -e "${GREEN}已停止服务${NC}"
+    systemctl stop bot.service
+    
+    if wait_for_service_status "inactive"; then
+        echo -e "${GREEN}Bot 服务已停止。${NC}"
+    else
+        echo -e "${RED}服务停止超时，尝试强制停止...${NC}"
+        systemctl kill -s SIGKILL bot.service
+        sleep 1
+        if wait_for_service_status "inactive"; then
+            echo -e "${GREEN}强制停止成功！${NC}"
+        else
+            echo -e "${RED}强制停止失败，请手动检查服务状态。${NC}"
+        fi
+    fi
 }
 
 # 检查状态函数
 check_status() {
-    if systemctl is-active --quiet $SERVICE_NAME; then
+    if systemctl is-active --quiet bot.service; then
         echo -e "运行状态：${GREEN}已运行${NC}"
     else
         echo -e "运行状态：${RED}未运行${NC}"
@@ -269,13 +319,32 @@ update() {
     echo -e "${GREEN}拉取更新成功${NC}"
     echo -e "${YELLOW}正在重启应用bot......${NC}"
     
-    # 重新加载systemd
-    sudo systemctl daemon-reload
+    # 重新加载 systemd 配置
+    systemctl daemon-reload
     
-    # 重启服务
-    sudo systemctl restart $SERVICE_NAME
+    # 直接使用 SIGKILL 强制结束进程并重启
+    systemctl kill -s SIGKILL bot.service 2>/dev/null
+    
+    # 短暂等待确保进程已经结束
+    sleep 0.5
+    
+    # 启动服务
+    systemctl start bot.service
+    
+    # 使用更短的超时检查
+    if wait_for_service_status "active"; then
+        echo -e "${GREEN}Bot 已成功重启！${NC}"
+    else
+        echo -e "${RED}Bot 启动失败，请检查日志文件。${NC}"
+    fi
     
     echo -e "${GREEN}更新完成${NC}"
+}
+
+# 添加进程状态检查函数
+is_running() {
+    pgrep -f "python3.*bot.py" >/dev/null
+    return $?
 }
 
 # 主菜单
@@ -303,7 +372,7 @@ show_menu() {
     echo "============================================"
     check_status
     echo "============================================"
-    echo "若config.yml配置没有填写,状态也会为显示“已运行”"
+    echo "若config.yml配置没有填写,状态也会为显示"已运行""
     echo "安装完成后请自行测试功能是否正常"
     echo "你可以随时使用crispbot唤起本菜单"
     echo "============================================"
