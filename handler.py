@@ -544,17 +544,35 @@ sio = socketio.AsyncClient(reconnection_attempts=5, logger=True)
 # Def Event Handlers
 @sio.on("connect")
 async def connect():
-    # 创建内联键盘按钮，添加新的按钮
-    keyboard = [
-        [
-            InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
-            InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
-        ],
-        [
-            InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
-            InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+    # 检查是否处于下班模式（通过检查是否存在空字符串自动回复）
+    if "" in config.get('autoreply', {}):
+        keyboard = [
+            [
+                InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+            ],
+            [
+                InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+                InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+            ],
+            [
+                InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
+            ]
         ]
-    ]
+    else:
+        keyboard = [
+            [
+                InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+            ],
+            [
+                InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+                InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+            ],
+            [
+                InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
+            ]
+        ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await callbackContext.bot.send_message(
@@ -848,6 +866,68 @@ async def handle_admin_callback(update, context):
             )
             # 清除用户状态
             context.user_data.clear()
+            
+        elif query.data == "admin_off_duty":
+            # 添加下班自动回复，直接添加在最后
+            if "" not in config.get('autoreply', {}):
+                if 'autoreply' not in config:
+                    config['autoreply'] = {}
+                
+                # 直接在最后添加空字符串作为默认回复
+                config['autoreply'][''] = "您好，当前为非工作时间。如有紧急事项，请发送邮件至 support@example.com 或在工作时间（周一至周五 9:00-18:00）再次联系我们。"
+                
+                # 保存到配置文件
+                with open('config.yml', 'w', encoding='utf-8') as f:
+                    yaml.dump(config, f, allow_unicode=True)
+                    
+                # 更新按钮状态
+                keyboard = [
+                    [
+                        InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                        InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+                    ],
+                    [
+                        InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+                        InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+                    ],
+                    [
+                        InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
+                    ]
+                ]
+                
+                await query.message.edit_text(
+                    "已切换至下班模式，所有消息将自动回复下班提示。\n注意：原有的关键词回复仍然有效。",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+            
+        elif query.data == "admin_normal_duty":
+            # 删除下班自动回复
+            if "" in config.get('autoreply', {}):
+                del config['autoreply']['']
+                
+                # 保存到配置文件
+                with open('config.yml', 'w', encoding='utf-8') as f:
+                    yaml.dump(config, f, allow_unicode=True)
+                    
+                # 恢复原始按钮布局
+                keyboard = [
+                    [
+                        InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                        InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+                    ],
+                    [
+                        InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+                        InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+                    ],
+                    [
+                        InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
+                    ]
+                ]
+                
+                await query.message.edit_text(
+                    "已恢复正常模式。",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
             
     except Exception as e:
         error_message = f"处理回调时出错: {str(e)}"
