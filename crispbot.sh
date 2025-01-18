@@ -305,40 +305,22 @@ view_logs() {
     sudo journalctl -u $SERVICE_NAME -n 30 -f
 }
 
-# 配置文件更新函数
-update_config() {
-    local example_file="$1"
-    local current_file="$2"
-    
-    echo -e "${YELLOW}正在检查配置文件更新...${NC}"
-    
-    # 使用 yq 工具处理 YAML 文件
-    if ! command -v yq &> /dev/null; then
-        echo -e "${YELLOW}正在安装 yq 工具...${NC}"
-        wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
-        chmod +x /usr/local/bin/yq
-    fi
-    
-    # 读取示例配置中的所有键
-    while IFS= read -r key; do
-        # 检查当前配置是否缺少该键
-        if ! yq eval ".$key" "$current_file" &>/dev/null; then
-            echo -e "${YELLOW}检测到新的配置项: $key${NC}"
-            # 获取示例配置中的默认值
-            default_value=$(yq eval ".$key" "$example_file")
-            echo -e "请输入 $key 的值 (直接回车使用默认值):"
-            echo -e "默认值: $default_value"
-            read -r new_value
-            
-            if [ -z "$new_value" ]; then
-                new_value="$default_value"
-            fi
-            
-            # 添加新配置到当前配置文件
-            echo -e "\n# Added by update script\n$key: $new_value" >> "$current_file"
-            echo -e "${GREEN}已添加配置项: $key${NC}"
+# 备选方案：使用 grep 检查配置
+check_and_add_config() {
+    if ! grep -q "^off_duty_reply:" config.yml; then
+        echo -e "${YELLOW}检测到新的配置项: off_duty_reply${NC}"
+        echo -e "请输入下班时的自动回复内容 (直接回车使用默认值):"
+        default_reply="您好，当前为非工作时间。如有紧急事项，请发送邮件至 support@example.com 或在工作时间（周一至周五 9:00-18:00）再次联系我们。"
+        echo -e "默认值: $default_reply"
+        read -r off_duty_reply
+        
+        if [ -z "$off_duty_reply" ]; then
+            off_duty_reply="$default_reply"
         fi
-    done < <(yq eval 'keys | .[]' "$example_file")
+        
+        echo -e "\n# 下班自动回复内容\noff_duty_reply: \"$off_duty_reply\"" >> config.yml
+        echo -e "${GREEN}已添加下班回复配置${NC}"
+    fi
 }
 
 # 更新函数
@@ -355,8 +337,8 @@ update() {
     git fetch origin main
     git checkout origin/main -- bot.py handler.py location_names.py requirements.txt config.yml.example
     
-    # 更新配置文件
-    update_config "config.yml.example" "config.yml"
+    # 检查并更新配置文件
+    check_and_add_config
     
     echo -e "${GREEN}拉取更新成功${NC}"
     echo -e "${YELLOW}正在重启应用bot......${NC}"
