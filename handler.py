@@ -570,7 +570,7 @@ async def connect():
                 InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
             ],
             [
-                InlineKeyboardButton("下班模式", callback_data="admin_off_duty")  # 不是下班模式，显示下班按钮
+                InlineKeyboardButton("下班模式", callback_data="admin_off_duty")  # 默认显示下班模式
             ]
         ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -906,7 +906,7 @@ async def handle_admin_callback(update, context):
                         InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
                     ],
                     [
-                        InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
+                        InlineKeyboardButton("恢复上班模式", callback_data="admin_normal_duty")  # 修改为恢复上班模式
                     ]
                 ]
                 
@@ -935,7 +935,7 @@ async def handle_admin_callback(update, context):
                         InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
                     ],
                     [
-                        InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
+                        InlineKeyboardButton("下班模式", callback_data="admin_off_duty")  # 修改这里，恢复为下班模式按钮
                     ]
                 ]
                 
@@ -1021,7 +1021,7 @@ async def handle_keyword_input(update, context):
                         InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
                     ],
                     [
-                        InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
+                        InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
                     ]
                 ]
                 # 如果当前是下班模式，显示恢复按钮
@@ -1086,7 +1086,7 @@ async def handle_keyword_input(update, context):
                         InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
                     ],
                     [
-                        InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
+                        InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
                     ]
                 ]
                 
@@ -1142,7 +1142,7 @@ async def handle_keyword_input(update, context):
                 InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
             ],
             [
-                InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
+                InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
             ]
         ]
         # 如果当前是下班模式，显示恢复按钮
