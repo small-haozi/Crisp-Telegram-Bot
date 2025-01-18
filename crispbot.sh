@@ -273,8 +273,7 @@ stop() {
     fi
     
     echo -e "${YELLOW}正在停止 Bot 服务...${NC}"
-    # 直接使用 SIGKILL 强制结束进程
-    systemctl kill -s SIGKILL bot.service 2>/dev/null
+    systemctl stop bot.service
     
     if wait_for_service_status "inactive"; then
         echo -e "${GREEN}Bot 服务已停止。${NC}"
@@ -306,6 +305,42 @@ view_logs() {
     sudo journalctl -u $SERVICE_NAME -n 30 -f
 }
 
+# 配置文件更新函数
+update_config() {
+    local example_file="$1"
+    local current_file="$2"
+    
+    echo -e "${YELLOW}正在检查配置文件更新...${NC}"
+    
+    # 使用 yq 工具处理 YAML 文件
+    if ! command -v yq &> /dev/null; then
+        echo -e "${YELLOW}正在安装 yq 工具...${NC}"
+        wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+        chmod +x /usr/local/bin/yq
+    fi
+    
+    # 读取示例配置中的所有键
+    while IFS= read -r key; do
+        # 检查当前配置是否缺少该键
+        if ! yq eval ".$key" "$current_file" &>/dev/null; then
+            echo -e "${YELLOW}检测到新的配置项: $key${NC}"
+            # 获取示例配置中的默认值
+            default_value=$(yq eval ".$key" "$example_file")
+            echo -e "请输入 $key 的值 (直接回车使用默认值):"
+            echo -e "默认值: $default_value"
+            read -r new_value
+            
+            if [ -z "$new_value" ]; then
+                new_value="$default_value"
+            fi
+            
+            # 添加新配置到当前配置文件
+            echo -e "\n# Added by update script\n$key: $new_value" >> "$current_file"
+            echo -e "${GREEN}已添加配置项: $key${NC}"
+        fi
+    done < <(yq eval 'keys | .[]' "$example_file")
+}
+
 # 更新函数
 update() {
     echo -e "${YELLOW}正在更新 Telegram Bot...${NC}"
@@ -313,26 +348,25 @@ update() {
     # 进入目标目录
     cd "$BOT_DIR" || exit
     
+    # 备份当前配置
+    cp config.yml config.yml.bak
+    
     # 拉取特定文件
-    git fetch origin main  # 获取最新的远程更新
-    git checkout origin/main -- bot.py handler.py location_names.py requirements.txt  # 只拉取特定文件
-
+    git fetch origin main
+    git checkout origin/main -- bot.py handler.py location_names.py requirements.txt config.yml.example
+    
+    # 更新配置文件
+    update_config "config.yml.example" "config.yml"
+    
     echo -e "${GREEN}拉取更新成功${NC}"
     echo -e "${YELLOW}正在重启应用bot......${NC}"
     
-    # 重新加载 systemd 配置
+    # 重启服务
     systemctl daemon-reload
-    
-    # 直接使用 SIGKILL 强制结束进程并重启
     systemctl kill -s SIGKILL bot.service 2>/dev/null
-    
-    # 短暂等待确保进程已经结束
     sleep 0.5
-    
-    # 启动服务
     systemctl start bot.service
     
-    # 使用更短的超时检查
     if wait_for_service_status "active"; then
         echo -e "${GREEN}Bot 已成功重启！${NC}"
     else
