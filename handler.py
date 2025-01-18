@@ -699,8 +699,15 @@ async def handle_admin_callback(update, context):
                 [
                     InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
                     InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+                ],
+                [
+                    InlineKeyboardButton("下班模式", callback_data="admin_off_duty")  # 默认显示下班模式
                 ]
             ]
+            
+            # 如果当前是下班模式，显示恢复按钮
+            if "" in config.get('autoreply', {}):
+                keyboard[-1] = [InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")]
             await query.message.edit_text(
                 "已连接到 Crisp 服务器。",
                 reply_markup=InlineKeyboardMarkup(keyboard)
@@ -906,12 +913,13 @@ async def handle_admin_callback(update, context):
                         InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
                     ],
                     [
-                        InlineKeyboardButton("恢复上班模式", callback_data="admin_normal_duty")  # 修改为恢复上班模式
+                        InlineKeyboardButton("恢复上班模式", callback_data="admin_normal_duty")
                     ]
                 ]
                 
                 await query.message.edit_text(
-                    "已切换至下班模式，所有消息将自动回复下班提示。",
+                    f"已切换至下班模式，所有消息将自动回复：\n\n"
+                    f"💬当前自动回复内容为: {off_duty_message}",
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
             
@@ -935,7 +943,7 @@ async def handle_admin_callback(update, context):
                         InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
                     ],
                     [
-                        InlineKeyboardButton("下班模式", callback_data="admin_off_duty")  # 修改这里，恢复为下班模式按钮
+                        InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
                     ]
                 ]
                 
