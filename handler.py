@@ -223,9 +223,10 @@ def getMetas(sessionId):
     if meta_data := metas.get("data", {}):
         meta_mapping = [
             ('Account', '📧*用户账号*', lambda x: f'`{x}`'),
-            ('SubscriptionName', '🪪*使用套餐*', lambda x: x),
-            ('Plan', '🪪*使用套餐*', lambda x: x),
-            ('ExpirationTime', '🪪*到期时间*', lambda x: x if x != "-" else "长期有效"),
+            ('SubscriptionName', '🪪*使用套餐*', lambda x: "暂无套餐" if x == "-" else x),
+            ('Plan', '🪪*使用套餐*', lambda x: "暂无套餐"),
+            ('ExpirationTime', '🪪*到期时间*', lambda x: "长期有效" if x == "-" else x),
+            ('ExpiraTime', '🪪*到期时间*', lambda x: "长期有效" if x == "-" else x),
             ('AccountCreated', '🪪*注册时间*', lambda x: x),
         ]
         
