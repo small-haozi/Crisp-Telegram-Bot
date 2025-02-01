@@ -221,14 +221,27 @@ def getMetas(sessionId):
     
     # 处理元数据
     if meta_data := metas.get("data", {}):
-        meta_mapping = [
+        # 先统一字段名
+        if 'ExpiraTime' in meta_data:
+            meta_data['ExpirationTime'] = meta_data['ExpiraTime']
+        
+        # 判断是否有套餐（根据 SubscriptionName 判断）
+        has_subscription = meta_data.get('SubscriptionName', '-') != '-'
+        
+        base_mapping = [
             ('Account', '📧*用户账号*', lambda x: f'`{x}`'),
             ('SubscriptionName', '🪪*使用套餐*', lambda x: "暂无套餐" if x == "-" else x),
-            ('Plan', '🪪*使用套餐*', lambda x: "暂无套餐"),
-            ('ExpirationTime', '🪪*到期时间*', lambda x: "长期有效" if x == "-" else x),
-            ('ExpiraTime', '🪪*到期时间*', lambda x: "长期有效" if x == "-" else x),
             ('AccountCreated', '🪪*注册时间*', lambda x: x),
         ]
+        
+        # 只有在有套餐的情况下才添加到期时间和Plan
+        if has_subscription:
+            base_mapping.extend([
+                ('Plan', '🪪*使用套餐*', lambda x: x),
+                ('ExpirationTime', '🪪*到期时间*', lambda x: "长期有效" if x == "-" else x)
+            ])
+        
+        meta_mapping = base_mapping
         
         for key, prefix, formatter in meta_mapping:
             if value := meta_data.get(key):
