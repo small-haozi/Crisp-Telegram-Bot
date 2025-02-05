@@ -27,6 +27,12 @@ create_bot() {
     echo -e "${YELLOW}请输入新bot的编号（例如：3）：${NC}"
     read bot_number
     
+    # 检查是否已存在相同编号的bot
+    if grep -q "bot${bot_number}:" docker-compose.yml; then
+        echo -e "${RED}编号 ${bot_number} 的bot已存在，请使用其他编号${NC}"
+        return 1
+    fi
+    
     echo -e "${YELLOW}请输入bot的别名（例如：us-bot）：${NC}"
     read bot_alias
     
@@ -40,6 +46,14 @@ create_bot() {
     
     echo -e "${GREEN}已创建配置文件 config${bot_number}-${bot_alias}.yml${NC}"
     echo -e "${YELLOW}请编辑配置文件后再启动服务${NC}"
+    
+    # 检查docker-compose.yml是否以换行符结尾
+    if [ -f docker-compose.yml ] && [ -s docker-compose.yml ]; then
+        last_char=$(tail -c1 docker-compose.yml)
+        if [ "$last_char" != "" ]; then
+            echo "" >> docker-compose.yml
+        fi
+    fi
     
     # 添加到docker-compose.yml
     cat >> docker-compose.yml <<EOL
@@ -55,6 +69,8 @@ create_bot() {
     environment:
       - TZ=Asia/Shanghai
 EOL
+
+    echo -e "${GREEN}已将 bot${bot_number} 添加到 docker-compose.yml${NC}"
 }
 
 # 启动所有bot
