@@ -128,10 +128,48 @@ update_bot() {
     # 保存当前目录
     current_dir=$(pwd)
     
+    # 检查是否有本地修改
+    if [ -n "$(git status --porcelain)" ]; then
+        echo -e "${YELLOW}检测到本地文件有修改。${NC}"
+        echo -e "${YELLOW}1. 保存本地修改（stash）${NC}"
+        echo -e "${YELLOW}2. 放弃本地修改${NC}"
+        echo -e "${YELLOW}3. 取消更新${NC}"
+        read -p "请选择操作 [1-3]: " stash_choice
+        
+        case $stash_choice in
+            1)
+                git stash
+                echo -e "${GREEN}已保存本地修改${NC}"
+                ;;
+            2)
+                git checkout -- .
+                echo -e "${GREEN}已放弃本地修改${NC}"
+                ;;
+            3)
+                echo -e "${YELLOW}取消更新${NC}"
+                return 1
+                ;;
+            *)
+                echo -e "${RED}无效的选择${NC}"
+                return 1
+                ;;
+        esac
+    fi
+    
     # 拉取最新代码
     git pull
     
     if [ $? -eq 0 ]; then
+        # 如果之前有保存的修改，尝试恢复
+        if [ "$stash_choice" = "1" ]; then
+            if git stash pop; then
+                echo -e "${GREEN}已恢复本地修改${NC}"
+            else
+                echo -e "${RED}恢复本地修改时发生冲突，请手动解决${NC}"
+                return 1
+            fi
+        fi
+    
         # 重新构建所有容器
         docker-compose build
         
