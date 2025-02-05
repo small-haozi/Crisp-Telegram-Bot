@@ -702,7 +702,7 @@ async def handle_admin_callback(update, context):
                             text="Docker 环境检测到，正在重启进程..."
                         )
                         # 使用 os._exit(0) 强制退出进程
-                        os._exit(0)
+                        os._exit(1)
                     else:
                         await context.bot.send_message(
                             chat_id=query.message.chat_id,
