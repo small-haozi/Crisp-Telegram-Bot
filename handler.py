@@ -699,10 +699,10 @@ async def handle_admin_callback(update, context):
                     if container_name:
                         await context.bot.send_message(
                             chat_id=query.message.chat_id,
-                            text="Docker 环境检测到，正在重启容器..."
+                            text="Docker 环境检测到，正在重启进程..."
                         )
-                        # 使用 Docker API 重启容器
-                        subprocess.run(['docker', 'restart', container_name], check=True)
+                        # 直接退出进程，让 Docker 的 restart policy 处理重启
+                        sys.exit(0)
                     else:
                         await context.bot.send_message(
                             chat_id=query.message.chat_id,
@@ -718,9 +718,6 @@ async def handle_admin_callback(update, context):
                     subprocess.run(['systemctl', 'daemon-reload'], check=True)
                     subprocess.run(['systemctl', 'kill', '-s', 'SIGKILL', 'bot.service'], check=True)
                     subprocess.Popen(['systemctl', 'start', 'bot.service'])
-                
-                # 立即退出当前进程
-                sys.exit(0)
                 
             except Exception as e:
                 error_message = f"重启失败: {str(e)}"
