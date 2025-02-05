@@ -18,6 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 设置时区
 ENV TZ=Asia/Shanghai
+# 添加 Docker 环境标识
+ENV DOCKER_CONTAINER=true
+
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 创建session_mapping.yml并设置权限
