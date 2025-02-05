@@ -61,7 +61,7 @@ create_bot() {
   bot${bot_number}:
     build: .
     container_name: crisp_bot_${bot_number}_${bot_alias}
-    restart: always
+    restart: unless-stopped
     volumes:
       - ./config${bot_number}-${bot_alias}.yml:/app/config.yml
       - ./data${bot_number}:/app/data
