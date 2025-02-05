@@ -13,6 +13,21 @@ chmod +x crispbot.sh
 ./crispbot.sh
 ```
 
+## docker使用
+```
+# apt install git 
+git clone https://github.com/small-haozi/Crisp-Telegram-Bot.git
+cd Crisp-Telegram-Bot
+chmod +x docker-bot.sh
+./docker-bot.sh
+```
+输入1创建bot
+修改目录下的config【编号】【别名】
+然后
+```
+docker-compose up -d
+```
+
 ## 申请 Telegram Bot Token
 
 1. 私聊 [https://t.me/BotFather](https://https://t.me/BotFather)
