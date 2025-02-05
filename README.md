@@ -23,7 +23,8 @@ chmod +x docker-bot.sh
 ```
 输入1创建bot
 修改目录下的config【编号】【别名】
-然后
+选择是否立刻构建  立即创建yes   
+如果想手动仔细修改后创建选no 则
 ```
 docker-compose up -d
 ```
