@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  # 示例配置，实际使用时会由 docker-bot.sh 自动生成
+  # bot1:
+  #   build: .
+  #   container_name: crisp_bot_1_example
+  #   restart: always
+  #   volumes:
+  #     - ./config1-example.yml:/app/config.yml
+  #     - ./data1:/app/data
+  #     - ./session_mapping1-example.yml:/app/session_mapping.yml
+  #   environment:
+  #     - TZ=Asia/Shanghai 
