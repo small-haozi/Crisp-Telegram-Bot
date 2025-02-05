@@ -71,6 +71,15 @@ create_bot() {
 EOL
 
     echo -e "${GREEN}已将 bot${bot_number} 添加到 docker-compose.yml${NC}"
+    
+    echo -e "${YELLOW}是否要立即构建并启动新的bot实例？[Y/n]${NC}"
+    read start_choice
+    if [[ ! $start_choice =~ ^[Nn]$ ]]; then
+        docker-compose up -d "bot${bot_number}"
+        echo -e "${GREEN}Bot ${bot_number} 已启动${NC}"
+    else
+        echo -e "${YELLOW}Bot ${bot_number} 已创建但未启动，您可以稍后使用选项2或在编辑配置后再启动${NC}"
+    fi
 }
 
 # 启动所有bot
@@ -139,6 +148,41 @@ update_bot() {
     fi
 }
 
+# 卸载bot
+uninstall_bot() {
+    echo -e "${YELLOW}警告：这将删除所有bot实例和相关数据！${NC}"
+    echo -e "${YELLOW}请输入 'YES' 确认卸载：${NC}"
+    read confirm
+    
+    if [ "$confirm" = "YES" ]; then
+        # 停止并删除所有容器
+        docker-compose down
+        
+        # 删除所有相关文件
+        rm -f docker-compose.yml
+        rm -f config*-*.yml
+        rm -f session_mapping*-*.yml
+        rm -rf data*/
+        
+        # 删除Docker镜像
+        docker rmi $(docker images | grep "crisp_bot" | awk '{print $3}') 2>/dev/null
+        
+        echo -e "${GREEN}已完全卸载所有bot实例和相关数据${NC}"
+        echo -e "${YELLOW}配置文件模板（config.yml.example）和脚本文件已保留${NC}"
+        
+        # 询问是否退出脚本
+        echo -e "${YELLOW}是否要退出管理脚本？[Y/n]${NC}"
+        read exit_choice
+        if [[ $exit_choice =~ ^[Nn]$ ]]; then
+            return 0
+        else
+            exit 0
+        fi
+    else
+        echo -e "${YELLOW}取消卸载${NC}"
+    fi
+}
+
 # 主菜单
 show_menu() {
     echo "===================================="
@@ -151,6 +195,7 @@ show_menu() {
     echo "5. 重启指定bot"
     echo "6. 查看bot日志"
     echo "7. 更新Bot"
+    echo "8. 卸载Bot"
     echo "0. 退出"
     echo "===================================="
 }
@@ -174,7 +219,7 @@ main() {
     
     while true; do
         show_menu
-        read -p "请选择操作 [0-7]: " choice
+        read -p "请选择操作 [0-8]: " choice
         case $choice in
             1) create_bot ;;
             2) start_all ;;
@@ -183,6 +228,7 @@ main() {
             5) restart_bot ;;
             6) view_logs ;;
             7) update_bot ;;
+            8) uninstall_bot ;;
             0) exit 0 ;;
             *) echo -e "${RED}无效的选择${NC}" ;;
         esac
