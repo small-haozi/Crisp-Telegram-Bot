@@ -690,10 +690,34 @@ async def handle_admin_callback(update, context):
                 await query.answer("正在执行重启...")
                 await query.message.edit_text("Bot 正在重启...")
                 
-                # 先执行 daemon-reload，然后强制结束进程并重启
-                subprocess.run(['systemctl', 'daemon-reload'], check=True)
-                subprocess.run(['systemctl', 'kill', '-s', 'SIGKILL', 'bot.service'], check=True)
-                subprocess.Popen(['systemctl', 'start', 'bot.service'])
+                # 检查是否在 Docker 环境中运行
+                is_docker = os.environ.get('DOCKER_CONTAINER', False)
+                
+                if is_docker:
+                    # Docker 环境下的重启
+                    container_name = os.environ.get('HOSTNAME', '')
+                    if container_name:
+                        await context.bot.send_message(
+                            chat_id=query.message.chat_id,
+                            text="Docker 环境检测到，正在重启容器..."
+                        )
+                        # 使用 Docker API 重启容器
+                        subprocess.run(['docker', 'restart', container_name], check=True)
+                    else:
+                        await context.bot.send_message(
+                            chat_id=query.message.chat_id,
+                            text="无法获取容器名称，重启失败"
+                        )
+                else:
+                    # 传统部署方式的重启
+                    await context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text="正在重启 Bot..."
+                    )
+                    # 使用原来的重启方法
+                    subprocess.run(['systemctl', 'daemon-reload'], check=True)
+                    subprocess.run(['systemctl', 'kill', '-s', 'SIGKILL', 'bot.service'], check=True)
+                    subprocess.Popen(['systemctl', 'start', 'bot.service'])
                 
                 # 立即退出当前进程
                 sys.exit(0)
