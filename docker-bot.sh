@@ -6,6 +6,31 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# 检查是否安装了sudo
+check_sudo() {
+    if ! command -v sudo &> /dev/null; then
+        echo -e "${RED}sudo未安装，正在安装...${NC}"
+        # 使用su切换到root用户安装sudo
+        su -c "apt-get update && apt-get install -y sudo"
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}安装sudo失败，请手动安装后再运行此脚本${NC}"
+            exit 1
+        fi
+    fi
+    
+    # 检查当前用户是否在sudo组中
+    if ! groups | grep -q '\bsudo\b'; then
+        echo -e "${YELLOW}当前用户不在sudo组中，尝试添加...${NC}"
+        su -c "usermod -aG sudo $USER"
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}添加用户到sudo组失败，请手动配置sudo权限${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}已添加当前用户到sudo组，请重新登录后再运行此脚本${NC}"
+        exit 1
+    fi
+}
+
 # 检查是否安装了Docker和Docker Compose
 check_docker() {
     if ! command -v docker &> /dev/null; then
@@ -318,6 +343,7 @@ show_menu() {
 
 # 主程序
 main() {
+    check_sudo
     check_docker
     check_zip
     
