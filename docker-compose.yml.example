@@ -5,10 +5,10 @@ services:
   # bot1:
   #   build: .
   #   container_name: crisp_bot_1_example
-  #   restart: always
+  #   restart: unless-stopped
   #   volumes:
-  #     - ./config1-example.yml:/app/config.yml
-  #     - ./data1:/app/data
-  #     - ./session_mapping1-example.yml:/app/session_mapping.yml
+  #     - /opt/crisp_bot/example/config.yml:/app/config.yml
+  #     - /opt/crisp_bot/example/data:/app/data
+  #     - /opt/crisp_bot/example/session_mapping.yml:/app/session_mapping.yml
   #   environment:
   #     - TZ=Asia/Shanghai 
