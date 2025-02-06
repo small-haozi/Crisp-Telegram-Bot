@@ -36,15 +36,18 @@ create_bot() {
     echo -e "${YELLOW}请输入bot的别名（例如：us-bot）：${NC}"
     read bot_alias
     
-    # 复制配置文件
-    cp config.yml.example "config${bot_number}-${bot_alias}.yml"
-    mkdir -p "data${bot_number}"
-    # 创建空的session_mapping文件
-    touch "session_mapping${bot_number}-${bot_alias}.yml"
-    # 设置适当的权限
-    chmod 666 "session_mapping${bot_number}-${bot_alias}.yml"
+    # 在 /opt 下创建独立文件夹
+    sudo mkdir -p "/opt/crisp_bot/${bot_alias}"
     
-    echo -e "${GREEN}已创建配置文件 config${bot_number}-${bot_alias}.yml${NC}"
+    # 复制配置文件
+    sudo cp config.yml.example "/opt/crisp_bot/${bot_alias}/config.yml"
+    sudo mkdir -p "/opt/crisp_bot/${bot_alias}/data"
+    # 创建空的session_mapping文件
+    sudo touch "/opt/crisp_bot/${bot_alias}/session_mapping.yml"
+    # 设置适当的权限
+    sudo chmod -R 777 "/opt/crisp_bot/${bot_alias}"
+    
+    echo -e "${GREEN}已在 /opt/crisp_bot/${bot_alias} 创建配置文件${NC}"
     echo -e "${YELLOW}请编辑配置文件后再启动服务${NC}"
     
     # 检查docker-compose.yml是否以换行符结尾
@@ -63,9 +66,9 @@ create_bot() {
     container_name: crisp_bot_${bot_number}_${bot_alias}
     restart: unless-stopped
     volumes:
-      - ./config${bot_number}-${bot_alias}.yml:/app/config.yml
-      - ./data${bot_number}:/app/data
-      - ./session_mapping${bot_number}-${bot_alias}.yml:/app/session_mapping.yml
+      - /opt/crisp_bot/${bot_alias}/config.yml:/app/config.yml
+      - /opt/crisp_bot/${bot_alias}/data:/app/data
+      - /opt/crisp_bot/${bot_alias}/session_mapping.yml:/app/session_mapping.yml
     environment:
       - TZ=Asia/Shanghai
 EOL
@@ -198,9 +201,13 @@ uninstall_bot() {
         
         # 删除所有相关文件
         rm -f docker-compose.yml
-        rm -f config*-*.yml
-        rm -f session_mapping*-*.yml
-        rm -rf data*/
+        # 询问是否删除配置文件
+        echo -e "${YELLOW}是否删除所有配置文件和数据？[y/N]${NC}"
+        read delete_data
+        if [[ $delete_data =~ ^[Yy]$ ]]; then
+            sudo rm -rf /opt/crisp_bot/*
+            echo -e "${GREEN}已删除所有配置文件和数据${NC}"
+        fi
         
         # 删除Docker镜像
         docker rmi $(docker images | grep "crisp_bot" | awk '{print $3}') 2>/dev/null
