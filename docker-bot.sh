@@ -81,8 +81,119 @@ show_instances() {
     echo
 }
 
+# 卸载或迁移bot
+uninstall_or_migrate() {
+    echo -e "${YELLOW}请选择操作：${NC}"
+    echo -e "1. 卸载Bot"
+    echo -e "2. 迁移备份"
+    echo -e "0. 返回"
+    read -p "请选择 [0-2]: " operation
+
+    case $operation in
+        1)
+            echo -e "${YELLOW}警告：这将删除所有bot实例和相关数据！${NC}"
+            echo -e "${YELLOW}请输入 'YES' 确认卸载：${NC}"
+            read confirm
+            
+            if [ "$confirm" = "YES" ]; then
+                # 停止并删除所有容器
+                docker-compose down
+                
+                # 删除所有相关文件
+                rm -f docker-compose.yml
+                # 询问是否删除配置文件
+                echo -e "${YELLOW}是否删除所有配置文件和数据？[y/N]${NC}"
+                read delete_data
+                if [[ $delete_data =~ ^[Yy]$ ]]; then
+                    # 获取当前时间作为备份文件名
+                    backup_time=$(date +"%Y%m%d_%H%M%S")
+                    backup_file="crisp_bot_backup_${backup_time}.zip"
+                    
+                    # 创建备份
+                    echo -e "${YELLOW}正在创建备份...${NC}"
+                    if sudo zip -r "$backup_file" /opt/crisp_bot/ > /dev/null 2>&1; then
+                        echo -e "${GREEN}备份已保存为: ${backup_file}${NC}"
+                    else
+                        echo -e "${RED}备份创建失败${NC}"
+                        echo -e "${YELLOW}是否继续删除？[y/N]${NC}"
+                        read continue_delete
+                        if [[ ! $continue_delete =~ ^[Yy]$ ]]; then
+                            echo -e "${YELLOW}取消卸载${NC}"
+                            return 1
+                        fi
+                    fi
+                    
+                    sudo rm -rf /opt/crisp_bot
+                    echo -e "${GREEN}已删除所有配置文件和数据${NC}"
+                fi
+                
+                # 删除Docker镜像
+                docker rmi $(docker images | grep "crisp_bot" | awk '{print $3}') 2>/dev/null
+                
+                echo -e "${GREEN}已完全卸载所有bot实例和相关数据${NC}"
+                echo -e "${YELLOW}配置文件模板（config.yml.example）和脚本文件已保留${NC}"
+                
+                # 询问是否退出脚本
+                echo -e "${YELLOW}是否要退出管理脚本？[Y/n]${NC}"
+                read exit_choice
+                if [[ $exit_choice =~ ^[Nn]$ ]]; then
+                    return 0
+                else
+                    exit 0
+                fi
+            else
+                echo -e "${YELLOW}取消卸载${NC}"
+            fi
+            ;;
+        2)
+            # 创建迁移备份
+            backup_time=$(date +"%Y%m%d_%H%M%S")
+            backup_file="crisp_bot_backup_${backup_time}.zip"
+            
+            echo -e "${YELLOW}正在创建迁移备份...${NC}"
+            if sudo zip -r "$backup_file" /opt/crisp_bot/ > /dev/null 2>&1; then
+                echo -e "${GREEN}迁移备份已保存为: ${backup_file}${NC}"
+                echo -e "${YELLOW}请将此文件复制到新服务器上使用${NC}"
+            else
+                echo -e "${RED}创建迁移备份失败${NC}"
+            fi
+            ;;
+        0)
+            return 0
+            ;;
+        *)
+            echo -e "${RED}无效的选择${NC}"
+            ;;
+    esac
+}
+
 # 创建新的bot实例
 create_bot() {
+    # 检查目录是否已存在
+    if [ -d "/opt/crisp_bot" ]; then
+        echo -e "${YELLOW}检测到已存在的crisp_bot目录${NC}"
+        echo -e "1. 继续使用现有目录"
+        echo -e "2. 备份并创建新目录"
+        echo -e "0. 取消"
+        read -p "请选择 [0-2]: " dir_choice
+        
+        case $dir_choice in
+            1)
+                echo -e "${YELLOW}将在现有目录中创建新实例${NC}"
+                ;;
+            2)
+                backup_time=$(date +"%Y%m%d_%H%M%S")
+                backup_dir="/opt/crisp_bot_backup_${backup_time}"
+                echo -e "${YELLOW}正在备份现有目录到 ${backup_dir}${NC}"
+                sudo mv /opt/crisp_bot "$backup_dir"
+                ;;
+            *)
+                echo -e "${YELLOW}操作已取消${NC}"
+                return 1
+                ;;
+        esac
+    fi
+    
     echo -e "${YELLOW}请输入新bot的编号（例如：3）：${NC}"
     read bot_number
     
@@ -255,63 +366,6 @@ update_bot() {
     fi
 }
 
-# 卸载bot
-uninstall_bot() {
-    echo -e "${YELLOW}警告：这将删除所有bot实例和相关数据！${NC}"
-    echo -e "${YELLOW}请输入 'YES' 确认卸载：${NC}"
-    read confirm
-    
-    if [ "$confirm" = "YES" ]; then
-        # 停止并删除所有容器
-        docker-compose down
-        
-        # 删除所有相关文件
-        rm -f docker-compose.yml
-        # 询问是否删除配置文件
-        echo -e "${YELLOW}是否删除所有配置文件和数据？[y/N]${NC}"
-        read delete_data
-        if [[ $delete_data =~ ^[Yy]$ ]]; then
-            # 获取当前时间作为备份文件名
-            backup_time=$(date +"%Y%m%d_%H%M%S")
-            backup_file="crisp_bot_backup_${backup_time}.zip"
-            
-            # 创建备份
-            echo -e "${YELLOW}正在创建备份...${NC}"
-            if sudo zip -r "$backup_file" /opt/crisp_bot/ > /dev/null 2>&1; then
-                echo -e "${GREEN}备份已保存为: ${backup_file}${NC}"
-            else
-                echo -e "${RED}备份创建失败${NC}"
-                echo -e "${YELLOW}是否继续删除？[y/N]${NC}"
-                read continue_delete
-                if [[ ! $continue_delete =~ ^[Yy]$ ]]; then
-                    echo -e "${YELLOW}取消卸载${NC}"
-                    return 1
-                fi
-            fi
-            
-            sudo rm -rf /opt/crisp_bot
-            echo -e "${GREEN}已删除所有配置文件和数据${NC}"
-        fi
-        
-        # 删除Docker镜像
-        docker rmi $(docker images | grep "crisp_bot" | awk '{print $3}') 2>/dev/null
-        
-        echo -e "${GREEN}已完全卸载所有bot实例和相关数据${NC}"
-        echo -e "${YELLOW}配置文件模板（config.yml.example）和脚本文件已保留${NC}"
-        
-        # 询问是否退出脚本
-        echo -e "${YELLOW}是否要退出管理脚本？[Y/n]${NC}"
-        read exit_choice
-        if [[ $exit_choice =~ ^[Nn]$ ]]; then
-            return 0
-        else
-            exit 0
-        fi
-    else
-        echo -e "${YELLOW}取消卸载${NC}"
-    fi
-}
-
 # 主菜单
 show_menu() {
     echo "===================================="
@@ -333,7 +387,7 @@ show_menu() {
     echo ""
     echo "7. 更新Bot"
     echo ""
-    echo "8. 卸载Bot"
+    echo "8. 卸载或迁移"
     echo ""
     echo "0. 退出"
     echo "===================================="
@@ -369,7 +423,7 @@ main() {
             5) restart_bot ;;
             6) view_logs ;;
             7) update_bot ;;
-            8) uninstall_bot ;;
+            8) uninstall_or_migrate ;;
             0) exit 0 ;;
             *) echo -e "${RED}无效的选择${NC}" ;;
         esac
