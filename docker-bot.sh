@@ -22,6 +22,14 @@ check_docker() {
     fi
 }
 
+# 检查是否安装了zip
+check_zip() {
+    if ! command -v zip &> /dev/null; then
+        echo -e "${RED}zip未安装，正在安装...${NC}"
+        sudo apt-get update && sudo apt-get install -y zip
+    fi
+}
+
 # 保存映射关系的文件
 MAPPING_FILE="/opt/crisp_bot/instance_mapping.txt"
 
@@ -238,7 +246,25 @@ uninstall_bot() {
         echo -e "${YELLOW}是否删除所有配置文件和数据？[y/N]${NC}"
         read delete_data
         if [[ $delete_data =~ ^[Yy]$ ]]; then
-            sudo rm -rf /opt/crisp_bot/*
+            # 获取当前时间作为备份文件名
+            backup_time=$(date +"%Y%m%d_%H%M%S")
+            backup_file="crisp_bot_backup_${backup_time}.zip"
+            
+            # 创建备份
+            echo -e "${YELLOW}正在创建备份...${NC}"
+            if sudo zip -r "$backup_file" /opt/crisp_bot/ > /dev/null 2>&1; then
+                echo -e "${GREEN}备份已保存为: ${backup_file}${NC}"
+            else
+                echo -e "${RED}备份创建失败${NC}"
+                echo -e "${YELLOW}是否继续删除？[y/N]${NC}"
+                read continue_delete
+                if [[ ! $continue_delete =~ ^[Yy]$ ]]; then
+                    echo -e "${YELLOW}取消卸载${NC}"
+                    return 1
+                fi
+            fi
+            
+            sudo rm -rf /opt/crisp_bot
             echo -e "${GREEN}已删除所有配置文件和数据${NC}"
         fi
         # 删除映射文件
@@ -293,6 +319,7 @@ show_menu() {
 # 主程序
 main() {
     check_docker
+    check_zip
     
     # 检查 docker-compose.yml 是否存在
     if [ ! -f docker-compose.yml ]; then
