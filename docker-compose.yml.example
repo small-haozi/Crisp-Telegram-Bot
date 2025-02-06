@@ -2,7 +2,7 @@ version: '3'
 
 services:
   # 示例配置，实际使用时会由 docker-bot.sh 自动生成
-  # bot1:
+  # bot99999999999999999999999999999999999:
   #   build: .
   #   container_name: crisp_bot_1_example
   #   restart: unless-stopped
