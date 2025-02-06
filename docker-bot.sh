@@ -66,8 +66,9 @@ show_instances() {
         echo "--------------------------------"
         while IFS=: read -r number alias; do
             # 检查容器状态
-            status=$(docker-compose ps --status running "bot${number}" 2>/dev/null | grep -v "Name" | wc -l)
-            if [ "$status" -eq 1 ]; then
+            container_name="crisp_bot_${number}_${alias}"
+            status=$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null)
+            if [ "$status" = "running" ]; then
                 status_text="${GREEN}运行中${NC}"
             else
                 status_text="${RED}已停止${NC}"
