@@ -292,8 +292,6 @@ uninstall_bot() {
             sudo rm -rf /opt/crisp_bot
             echo -e "${GREEN}已删除所有配置文件和数据${NC}"
         fi
-        # 删除映射文件
-        sudo rm -f "$MAPPING_FILE"
         
         # 删除Docker镜像
         docker rmi $(docker images | grep "crisp_bot" | awk '{print $3}') 2>/dev/null
