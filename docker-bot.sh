@@ -130,6 +130,12 @@ uninstall_or_migrate() {
                 # 删除Docker镜像
                 docker rmi $(docker images | grep "crisp_bot" | awk '{print $3}') 2>/dev/null
                 
+                # 重新创建 docker-compose.yml
+                echo "version: '3'" > docker-compose.yml
+                echo "" >> docker-compose.yml
+                echo "services:" >> docker-compose.yml
+                echo -e "${GREEN}已重新创建 docker-compose.yml${NC}"
+                
                 echo -e "${GREEN}已完全卸载所有bot实例和相关数据${NC}"
                 echo -e "${YELLOW}配置文件模板（config.yml.example）和脚本文件已保留${NC}"
                 
