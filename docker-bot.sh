@@ -22,6 +22,32 @@ check_docker() {
     fi
 }
 
+# 保存映射关系的文件
+MAPPING_FILE="/opt/crisp_bot/instance_mapping.txt"
+
+# 显示所有实例信息
+show_instances() {
+    echo -e "${YELLOW}当前所有Bot实例：${NC}"
+    if [ -f "$MAPPING_FILE" ]; then
+        echo -e "\n编号\t别名\t\t状态"
+        echo "--------------------------------"
+        while IFS=: read -r number alias; do
+            # 检查容器状态
+            status=$(docker-compose ps --status running "bot${number}" 2>/dev/null | grep -v "Name" | wc -l)
+            if [ "$status" -eq 1 ]; then
+                status_text="${GREEN}运行中${NC}"
+            else
+                status_text="${RED}已停止${NC}"
+            fi
+            echo -e "${number}\t${alias}\t\t${status_text}"
+        done < "$MAPPING_FILE"
+        echo "--------------------------------"
+    else
+        echo -e "${YELLOW}暂无Bot实例${NC}"
+    fi
+    echo
+}
+
 # 创建新的bot实例
 create_bot() {
     echo -e "${YELLOW}请输入新bot的编号（例如：3）：${NC}"
@@ -36,6 +62,10 @@ create_bot() {
     echo -e "${YELLOW}请输入bot的别名（例如：us-bot）：${NC}"
     read bot_alias
     
+    # 保存编号和别名的映射关系
+    sudo mkdir -p "$(dirname "$MAPPING_FILE")"
+    echo "${bot_number}:${bot_alias}" | sudo tee -a "$MAPPING_FILE" > /dev/null
+
     # 在 /opt 下创建独立文件夹
     sudo mkdir -p "/opt/crisp_bot/${bot_alias}"
     
@@ -99,6 +129,7 @@ stop_all() {
 
 # 停止指定bot
 stop_bot() {
+    show_instances
     echo -e "${YELLOW}请输入要停止的bot编号：${NC}"
     read bot_number
     docker-compose stop "bot${bot_number}"
@@ -107,6 +138,7 @@ stop_bot() {
 
 # 重启指定bot
 restart_bot() {
+    show_instances
     echo -e "${YELLOW}请输入要重启的bot编号：${NC}"
     read bot_number
     docker-compose restart "bot${bot_number}"
@@ -115,6 +147,7 @@ restart_bot() {
 
 # 查看日志
 view_logs() {
+    show_instances
     echo -e "${YELLOW}请输入要查看日志的bot编号（输入0查看所有）：${NC}"
     read bot_number
     if [ "$bot_number" = "0" ]; then
@@ -208,6 +241,8 @@ uninstall_bot() {
             sudo rm -rf /opt/crisp_bot/*
             echo -e "${GREEN}已删除所有配置文件和数据${NC}"
         fi
+        # 删除映射文件
+        sudo rm -f "$MAPPING_FILE"
         
         # 删除Docker镜像
         docker rmi $(docker images | grep "crisp_bot" | awk '{print $3}') 2>/dev/null
@@ -233,6 +268,7 @@ show_menu() {
     echo "===================================="
     echo "    Crisp Telegram Bot 管理面板"
     echo "===================================="
+    show_instances
     echo "1. 创建新的bot实例"
     echo "2. 启动所有bot"
     echo "3. 停止所有bot"
