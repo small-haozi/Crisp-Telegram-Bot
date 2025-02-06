@@ -401,15 +401,11 @@ main() {
     
     # 检查 docker-compose.yml 是否存在
     if [ ! -f docker-compose.yml ]; then
-        if [ -f docker-compose.yml.example ]; then
-            cp docker-compose.yml.example docker-compose.yml
-            echo -e "${GREEN}已创建 docker-compose.yml${NC}"
-        else
-            echo "version: '3'" > docker-compose.yml
-            echo "" >> docker-compose.yml
-            echo "services:" >> docker-compose.yml
-            echo -e "${GREEN}已创建空的 docker-compose.yml${NC}"
-        fi
+        # 创建新的 docker-compose.yml
+        echo "version: '3'" > docker-compose.yml
+        echo "" >> docker-compose.yml
+        echo "services:" >> docker-compose.yml
+        echo -e "${GREEN}已创建 docker-compose.yml${NC}"
     fi
     
     while true; do
