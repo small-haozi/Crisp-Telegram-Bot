@@ -6,6 +6,20 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# 获取脚本所在目录
+BOT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")" )" &> /dev/null && pwd )"
+
+# 脚本名称
+SCRIPT_NAME=$(basename "$0")
+
+# 创建符号链接函数
+create_symlink() {
+    if [ ! -L "/usr/local/bin/docker-bot" ]; then
+        sudo ln -s "$BOT_DIR/$SCRIPT_NAME" /usr/local/bin/docker-bot
+        echo -e "${GREEN}符号链接已创建。现在可以使用 'docker-bot' 命令来运行此脚本。${NC}"
+    fi
+}
+
 # 检查是否安装了sudo
 check_sudo() {
     if ! command -v sudo &> /dev/null; then
@@ -405,6 +419,7 @@ main() {
     check_sudo
     check_docker
     check_zip
+    create_symlink
     
     # 检查 docker-compose.yml 是否存在
     if [ ! -f docker-compose.yml ]; then
