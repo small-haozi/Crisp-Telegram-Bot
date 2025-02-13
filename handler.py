@@ -17,7 +17,7 @@ import subprocess
 import os
 import asyncio
 import sys
-import telegram  # 添加这行在文件开头
+import telegram 
 
 
 
@@ -28,8 +28,15 @@ changeButton = bot.changeButton
 groupId = config["bot"]["groupId"]
 websiteId = config["crisp"]["website"]
 payload = config["openai"]["payload"]
-# 添加这一行来初始化avatars
+# 初始化avatars
 avatars = config.get('avatars', {})
+
+# 添加 nicknames 的初始化
+nicknames = config.get('nicknames', {
+    'human_agent': '人工客服',
+    'ai_agent': 'AI客服',
+    'system_message': '系统消息'
+})
 
 
 
@@ -431,7 +438,7 @@ async def handle_telegram_photo(update, context):
                 "from": "operator",
                 "origin": "chat",
                 "user": {
-                    "nickname": '人工客服',
+                    "nickname": nicknames.get('human_agent', '人工客服'),
                     "avatar": avatars.get('human_agent', 'https://example.com/default_avatar.png')
                 }
             }
@@ -478,7 +485,7 @@ async def sendMessage(data):
                 "from": "operator",
                 "origin": "chat",
                 "user": {
-                    "nickname": '系统消息',
+                    "nickname": nicknames.get('system_message', '系统消息'),
                     "avatar": avatars.get('system_message', 'https://example.com/system_avatar.png')
                 }
             }
@@ -499,7 +506,7 @@ async def sendMessage(data):
                 "from": "operator",
                 "origin": "chat",
                 "user": {
-                    "nickname": '系统消息',
+                    "nickname": nicknames.get('system_message', '系统消息'),
                     "avatar": avatars.get('system_message', 'https://example.com/system_avatar.png')
                 }
             }
@@ -528,7 +535,7 @@ async def sendMessage(data):
                 "from": "operator",
                 "origin": "chat",
                 "user": {
-                    "nickname": '智能客服',
+                    "nickname": nicknames.get('ai_agent', 'AI客服'),
                     "avatar": avatars.get('ai_agent', 'https://img.ixintu.com/download/jpg/20210125/8bff784c4e309db867d43785efde1daf_512_512.jpg')
                 }
             }
@@ -570,7 +577,8 @@ async def connect():
                 InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
             ],
             [
-                InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")  # 已经是下班模式，显示恢复按钮
+                InlineKeyboardButton("修改下班回复", callback_data="admin_edit_off_duty"),
+                InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
             ]
         ]
     else:
@@ -584,7 +592,8 @@ async def connect():
                 InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
             ],
             [
-                InlineKeyboardButton("下班模式", callback_data="admin_off_duty")  # 默认显示下班模式
+                InlineKeyboardButton("修改下班回复", callback_data="admin_edit_off_duty"),
+                InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
             ]
         ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -666,7 +675,6 @@ async def exec(context: ContextTypes.DEFAULT_TYPE):
 
 # 添加新的回调处理函数
 async def handle_admin_callback(update, context):
-    """处理管理按钮的回调"""
     try:
         query = update.callback_query
         logging.info(f"收到管理回调: {query.data}")
@@ -685,6 +693,49 @@ async def handle_admin_callback(update, context):
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             
+        # 如果是编辑关键字的回调
+        elif query.data.startswith("admin_edit_") and query.data != "admin_edit_off_duty":
+            try:
+                idx = int(query.data.replace("admin_edit_", ""))
+                keyword = context.user_data['edit_keywords'][idx]
+                context.user_data['editing_keyword'] = keyword
+                context.user_data['waiting_for'] = 'edit_reply'
+                context.user_data['original_message_id'] = query.message.message_id
+                context.user_data['original_chat_id'] = query.message.chat_id
+                
+                current_reply = config['autoreply'].get(keyword, "")
+                await query.message.edit_text(
+                    f"当前关键字：{keyword}\n"
+                    f"当前回复：{current_reply}\n\n"
+                    f"请输入新的回复内容：",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("取消", callback_data="admin_back_to_main")
+                    ]])
+                )
+            except (ValueError, IndexError) as e:
+                logging.error(f"处理编辑索引时出错: {str(e)}")
+                await query.answer("无效的选择")
+                
+        # 如果是编辑下班回复的回调
+        elif query.data == "admin_edit_off_duty":
+            context.user_data['waiting_for'] = 'off_duty_reply'
+            context.user_data['original_message_id'] = query.message.message_id
+            context.user_data['original_chat_id'] = query.message.chat_id
+            
+            current_reply = config.get('off_duty_reply', "您好，当前为非工作时间。如有紧急事项，请发送邮件至 support@example.com 或在工作时间（周一至周五 9:00-18:00）再次联系我们。")
+            
+            keyboard = [[
+                InlineKeyboardButton("取消", callback_data="admin_back_to_main")
+            ]]
+            
+            await query.message.edit_text(
+                f"当前下班回复内容：\n\n"
+                f"{current_reply}\n\n"
+                f"请输入新的下班回复内容：",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            await query.answer()
+
         elif query.data == "admin_confirm_restart":
             try:
                 await query.answer("正在执行重启...")
@@ -820,29 +871,6 @@ async def handle_admin_callback(update, context):
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             
-        elif query.data.startswith("admin_edit_"):
-            # 从索引获取关键字
-            try:
-                idx = int(query.data.replace("admin_edit_", ""))
-                keyword = context.user_data['edit_keywords'][idx]
-                context.user_data['editing_keyword'] = keyword
-                context.user_data['waiting_for'] = 'edit_reply'
-                context.user_data['original_message_id'] = query.message.message_id
-                context.user_data['original_chat_id'] = query.message.chat_id
-                
-                current_reply = config['autoreply'].get(keyword, "")
-                await query.message.edit_text(
-                    f"当前关键字：{keyword}\n"
-                    f"当前回复：{current_reply}\n\n"
-                    f"请输入新的回复内容：",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("取消", callback_data="admin_back_to_main")
-                    ]])
-                )
-            except (ValueError, IndexError) as e:
-                logging.error(f"处理编辑索引时出错: {str(e)}")
-                await query.answer("无效的选择")
-                
         elif query.data == "admin_keyword_delete":
             if not config.get('autoreply'):
                 await query.message.edit_text(
@@ -909,14 +937,16 @@ async def handle_admin_callback(update, context):
                     InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
                 ],
                 [
-                    InlineKeyboardButton("下班模式", callback_data="admin_off_duty")  # 默认显示下班模式
+                    InlineKeyboardButton("修改下班回复", callback_data="admin_edit_off_duty")
                 ]
             ]
             
-            # 如果当前是下班模式，显示恢复按钮
+            # 根据当前模式添加相应按钮
             if "" in config.get('autoreply', {}):
-                keyboard[-1] = [InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")]
-                
+                keyboard[-1].append(InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty"))
+            else:
+                keyboard[-1].append(InlineKeyboardButton("下班模式", callback_data="admin_off_duty"))
+
             await query.message.edit_text(
                 "已连接到 Crisp 服务器。",
                 reply_markup=InlineKeyboardMarkup(keyboard)
@@ -924,6 +954,37 @@ async def handle_admin_callback(update, context):
             # 清除用户状态
             context.user_data.clear()
             
+        elif query.data == "admin_normal_duty":
+            # 删除下班自动回复
+            if "" in config.get('autoreply', {}):
+                del config['autoreply'][""]
+                
+                # 保存到配置文件
+                with open('config.yml', 'w', encoding='utf-8') as f:
+                    yaml.dump(config, f, allow_unicode=True)
+                    
+                # 恢复原始按钮布局
+                keyboard = [
+                    [
+                        InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                        InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+                    ],
+                    [
+                        InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+                        InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+                    ],
+                    [
+                        InlineKeyboardButton("修改下班回复", callback_data="admin_edit_off_duty"),
+                        InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
+                    ]
+                ]
+                
+                await query.message.edit_text(
+                    "已恢复正常模式。",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                await query.answer()  # 添加这行来响应回调查询
+
         elif query.data == "admin_off_duty":
             # 添加下班自动回复
             if "" not in config.get('autoreply', {}):
@@ -948,7 +1009,8 @@ async def handle_admin_callback(update, context):
                         InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
                     ],
                     [
-                        InlineKeyboardButton("恢复上班模式", callback_data="admin_normal_duty")
+                        InlineKeyboardButton("修改下班回复", callback_data="admin_edit_off_duty"),
+                        InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
                     ]
                 ]
                 
@@ -957,36 +1019,8 @@ async def handle_admin_callback(update, context):
                     f"💬当前自动回复内容为: {off_duty_message}",
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
-            
-        elif query.data == "admin_normal_duty":
-            # 删除下班自动回复
-            if "" in config.get('autoreply', {}):
-                del config['autoreply'][""]
-                
-                # 保存到配置文件
-                with open('config.yml', 'w', encoding='utf-8') as f:
-                    yaml.dump(config, f, allow_unicode=True)
-                    
-                # 恢复原始按钮布局
-                keyboard = [
-                    [
-                        InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
-                        InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
-                    ],
-                    [
-                        InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
-                        InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
-                    ],
-                    [
-                        InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
-                    ]
-                ]
-                
-                await query.message.edit_text(
-                    "已恢复正常模式。",
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-            
+                await query.answer()  # 添加这行来响应回调查询
+
     except Exception as e:
         error_message = f"处理回调时出错: {str(e)}"
         logging.error(error_message)
@@ -1140,6 +1174,75 @@ async def handle_keyword_input(update, context):
                 success_message = (
                     f"✅ 已成功修改关键字回复：\n\n"
                     f"🔑 关键字：{keyword}\n"
+                    f"💬 新的回复内容：{new_reply}"
+                )
+                
+                await context.bot.edit_message_text(
+                    chat_id=context.user_data['original_chat_id'],
+                    message_id=context.user_data['original_message_id'],
+                    text=success_message,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                
+                # 删除用户的输入消息
+                try:
+                    await message.delete()
+                except:
+                    pass
+                    
+            except Exception as e:
+                error_message = f"❌ 保存配置失败: {str(e)}"
+                await context.bot.edit_message_text(
+                    chat_id=context.user_data['original_chat_id'],
+                    message_id=context.user_data['original_message_id'],
+                    text=error_message,
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("返回", callback_data="admin_back_to_main")
+                    ]])
+                )
+                logging.error(f"保存配置失败: {str(e)}")
+            finally:
+                # 清除用户状态
+                context.user_data.clear()
+                
+        elif context.user_data['waiting_for'] == 'off_duty_reply':
+            new_reply = message.text
+            
+            try:
+                # 更新配置
+                config['off_duty_reply'] = new_reply
+                
+                # 如果当前处于下班模式,同时更新自动回复
+                if "" in config.get('autoreply', {}):
+                    config['autoreply'][""] = new_reply
+                
+                # 保存到配置文件
+                with open('config.yml', 'w', encoding='utf-8') as f:
+                    yaml.dump(config, f, allow_unicode=True)
+                
+                # 更新消息
+                keyboard = [
+                    [
+                        InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                        InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+                    ],
+                    [
+                        InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+                        InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+                    ],
+                    [
+                        InlineKeyboardButton("修改下班回复", callback_data="admin_edit_off_duty")
+                    ]
+                ]
+                
+                # 根据当前模式添加相应按钮
+                if "" in config.get('autoreply', {}):
+                    keyboard[-1].append(InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty"))
+                else:
+                    keyboard[-1].append(InlineKeyboardButton("下班模式", callback_data="admin_off_duty"))
+                
+                success_message = (
+                    f"✅ 已成功修改下班回复内容：\n\n"
                     f"💬 新的回复内容：{new_reply}"
                 )
                 
