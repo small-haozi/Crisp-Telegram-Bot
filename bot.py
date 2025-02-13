@@ -34,6 +34,13 @@ except FileNotFoundError as error:
     logging.warning('没有找到 config.yml，请复制 config.yml.example 并重命名为 config.yml')
     exit(1)
 
+# 初始化昵称配置
+nicknames = config.get('nicknames', {
+    'human_agent': '人工客服',
+    'ai_agent': 'AI客服',
+    'system_message': '系统消息'
+})
+
 # Connect Crisp
 try:
     crispCfg = config['crisp']
@@ -105,7 +112,7 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     "from": "operator",
                     "origin": "chat",
                     "user": {
-                        "nickname": '人工客服',
+                        "nickname": nicknames.get('human_agent', '人工客服'),
                         "avatar": handler.avatars.get('human_agent', 'https://example.com/default_avatar.png')
                     }
                 }
@@ -133,7 +140,7 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         "from": "operator",
                         "origin": "chat",
                         "user": {
-                            "nickname": '人工客服',
+                            "nickname": nicknames.get('human_agent', '人工客服'),
                             "avatar": handler.avatars.get('human_agent', 'https://example.com/default_avatar.png')
                         }
                     }
@@ -207,7 +214,7 @@ async def onChange(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     "from": "operator",
                     "origin": "chat",
                     "user": {
-                        "nickname": '系统消息',
+                        "nickname": nicknames.get('system_message', '系统消息'),
                         "avatar": handler.avatars.get('system_message', 'https://example.com/system_avatar.png')
                     }
                 }
