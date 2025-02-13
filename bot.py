@@ -56,9 +56,10 @@ except Exception as error:
 # Connect OpenAI
 try:
     openai = OpenAI(api_key=config['openai']['apiKey'], base_url='https://api.openai.com/v1')
-    openai.models.list()
+    openai.models.list()  # 测试连接
 except Exception as error:
     logging.warning('无法连接 OpenAI 服务，智能化回复将不会使用')
+    logging.error(f"OpenAI 连接错误: {str(error)}")  # 添加详细错误日志
     openai = None
 
 def changeButton(conversation_id, boolean, completed=False):
@@ -71,7 +72,7 @@ def changeButton(conversation_id, boolean, completed=False):
                 ),
                 InlineKeyboardButton(
                     text='已完成' if completed else '标记为已完成',
-                    callback_data=f'complete_session_{conversation_id}'
+                    callback_data=f'uncomplete_session_{conversation_id}' if completed else f'complete_session_{conversation_id}'
                 )
             ]
         ]
@@ -180,20 +181,45 @@ async def onChange(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             }
             payload = {"state": "resolved"}
             response = requests.patch(url, json=payload, headers=headers)
-            response.raise_for_status()  # 如果响应状态码不是 200，抛出异常
+            response.raise_for_status()
             await query.answer('对话已标记为完成')
             # 更新按钮为 "已完成"
+            session = context.bot_data.get(session_id, {})
+            session["completed"] = True
             await query.edit_message_reply_markup(
-                reply_markup=changeButton(session_id, context.bot_data[session_id].get("enableAI", False), completed=True)
+                reply_markup=changeButton(session_id, session.get("enableAI", False), completed=True)
             )
-        except requests.exceptions.RequestException as error:
-            await query.answer('无法标记对话为完成')
-            await query.message.reply_text(f"请求失败: {error}\n响应内容: {response.text}")
         except Exception as error:
             await query.answer('无法标记对话为完成')
-            await query.message.reply_text(f"未知错误: {error}")
+            logging.error(f"标记完成失败: {str(error)}")
+    
+    elif data[0].startswith('uncomplete_session_'):
+        session_id = data[0].split('uncomplete_session_')[1]
+        try:
+            # 使用 PATCH 请求将对话标记为未完成
+            url = f"https://api.crisp.chat/v1/website/{crispCfg['website']}/conversation/{session_id}/state"
+            auth = base64.b64encode(f"{crispCfg['id']}:{crispCfg['key']}".encode()).decode()
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Basic {auth}",
+                "X-Crisp-Tier": "plugin"
+            }
+            payload = {"state": "pending"}  # 或其他合适的状态
+            response = requests.patch(url, json=payload, headers=headers)
+            response.raise_for_status()
+            await query.answer('已取消完成标记')
+            # 更新按钮为 "标记为已完成"
+            session = context.bot_data.get(session_id, {})
+            session["completed"] = False
+            await query.edit_message_reply_markup(
+                reply_markup=changeButton(session_id, session.get("enableAI", False), completed=False)
+            )
+        except Exception as error:
+            await query.answer('无法取消完成标记')
+            logging.error(f"取消完成标记失败: {str(error)}")
+
     else:
-        session_id = data[0]  # 从 data 中解析 session_id
+        session_id = data[0]
         if openai is None:
             await query.answer('无法设置此功能')
         else:
@@ -201,7 +227,13 @@ async def onChange(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             session["enableAI"] = not eval(data[1])
             await query.answer()
             try:
-                await query.edit_message_reply_markup(changeButton(data[0], session["enableAI"]))
+                # 保持完成状态不变
+                completed = False
+                if session_id in context.bot_data:
+                    completed = context.bot_data[session_id].get('completed', False)
+                await query.edit_message_reply_markup(
+                    changeButton(data[0], session["enableAI"], completed=completed)
+                )
                 # 发送提示消息给对方
                 if session["enableAI"]:
                     message_content = "客服暂时无法回复您，AI客服已接入"
@@ -264,7 +296,8 @@ def main():
                         'topicId': data['topic_id'],
                         'messageId': data.get('message_id'),
                         'enableAI': data.get('enable_ai', False),
-                        'first_message': False  # 设置为 False 避免重复发送提示
+                        'first_message': False,  # 设置为 False 避免重复发送提示
+                        'completed': False  # 添加完成状态
                     }
                     logging.info(f"已恢复会话映射: {session_id} -> {data['topic_id']}")
         except Exception as e:
