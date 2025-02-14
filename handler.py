@@ -17,7 +17,10 @@ import subprocess
 import os
 import asyncio
 import sys
-import telegram 
+import telegram  # 添加这行在文件开头
+import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 
@@ -28,17 +31,36 @@ changeButton = bot.changeButton
 groupId = config["bot"]["groupId"]
 websiteId = config["crisp"]["website"]
 payload = config["openai"]["payload"]
-# 初始化avatars
+# 添加这一行来初始化avatars
 avatars = config.get('avatars', {})
 
-# 添加 nicknames 的初始化
+# 在文件开头添加 nicknames 的初始化
 nicknames = config.get('nicknames', {
     'human_agent': '人工客服',
     'ai_agent': 'AI客服',
     'system_message': '系统消息'
 })
 
+# 修改重试策略配置
+retry_strategy = Retry(
+    total=5,  # 增加重试次数
+    backoff_factor=2,  # 增加退避时间
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["HEAD", "GET", "PUT", "DELETE", "OPTIONS", "TRACE", "POST", "PATCH"],  # 允许所有方法重试
+)
+adapter = HTTPAdapter(max_retries=retry_strategy)
+http = requests.Session()
+http.mount("https://", adapter)
+http.mount("http://", adapter)
 
+# 修改 socket.io 客户端配置
+sio = socketio.AsyncClient(
+    reconnection_attempts=10,  # 增加重连次数
+    reconnection_delay=1,  # 初始重连延迟
+    reconnection_delay_max=60,  # 最大重连延迟
+    logger=True,
+    request_timeout=30  # 增加请求超时时间
+)
 
 def print_enabled_image_services():
     enabled_services = config.get('image_upload', {}).get('enabled_services', {})
@@ -459,158 +481,205 @@ async def handle_telegram_photo(update, context):
 
 
 async def sendMessage(data):
-    bot = callbackContext.bot
-    botData = callbackContext.bot_data
-    sessionId = data["session_id"]
-    session = botData.get(sessionId)
+    try:
+        bot = callbackContext.bot
+        botData = callbackContext.bot_data
+        sessionId = data["session_id"]
+        session = botData.get(sessionId)
 
-    client.website.mark_messages_read_in_conversation(websiteId,sessionId,
-        {"from": "user", "origin": "chat", "fingerprints": [data["fingerprint"]]}
-    )
-
-    if data["type"] == "text":
-        # 检查消息内容是否为 111 或 222
-        if data["content"] == '111' or data["content"] == '222':
-            session["enableAI"] = (data["content"] == '222')
-            await bot.edit_message_reply_markup(
-                chat_id=groupId,
-                message_id=session['messageId'],
-                reply_markup=changeButton(sessionId, session["enableAI"])
-            )
-            # 发送提示消息给对方
-            message_content = "AI客服已关闭" if data["content"] == '111' else "AI客服已开启"
-            query = {
-                "type": "text",
-                "content": message_content,
-                "from": "operator",
-                "origin": "chat",
-                "user": {
-                    "nickname": nicknames.get('system_message', '系统消息'),
-                    "avatar": avatars.get('system_message', 'https://example.com/system_avatar.png')
+        # 使用带重试的会话对象
+        try:
+            client.website.mark_messages_read_in_conversation(
+                websiteId, 
+                sessionId,
+                {
+                    "from": "user", 
+                    "origin": "chat", 
+                    "fingerprints": [data["fingerprint"]]
                 }
-            }
-            client.website.send_message_in_conversation(websiteId, sessionId, query)
-            return
+            )
+        except Exception as e:
+            logging.error(f"标记消息已读失败: {str(e)}")
+            # 失败后等待短暂时间再重试
+            await asyncio.sleep(1)
+            try:
+                client.website.mark_messages_read_in_conversation(
+                    websiteId, 
+                    sessionId,
+                    {
+                        "from": "user", 
+                        "origin": "chat", 
+                        "fingerprints": [data["fingerprint"]]
+                    }
+                )
+            except Exception as retry_error:
+                logging.error(f"重试标记消息已读仍然失败: {str(retry_error)}")
+                # 继续执行，不影响其他功能
+                pass
+
+        if data["type"] == "text":
+            # 检查消息内容是否为 111 或 222
+            if data["content"] == '111' or data["content"] == '222':
+                session["enableAI"] = (data["content"] == '222')
+                await bot.edit_message_reply_markup(
+                    chat_id=groupId,
+                    message_id=session['messageId'],
+                    reply_markup=changeButton(sessionId, session["enableAI"])
+                )
+                # 发送提示消息给对方
+                message_content = "AI客服已关闭" if data["content"] == '111' else "AI客服已开启"
+                query = {
+                    "type": "text",
+                    "content": message_content,
+                    "from": "operator",
+                    "origin": "chat",
+                    "user": {
+                        "nickname": nicknames.get('system_message', '系统消息'),
+                        "avatar": avatars.get('system_message', 'https://example.com/system_avatar.png')
+                    }
+                }
+                client.website.send_message_in_conversation(websiteId, sessionId, query)
+                return
 
             
-        flow = []
-        flow.append(f"🧾<b>消息推送</b>： {data['content']}")
+            flow = []
+            flow.append(f"🧾<b>消息推送</b>： {data['content']}")
 
-        # 仅在会话的第一条消息时发送提示
-        if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
-            session["first_message"] = False  # 标记为已发送提示
-            hint_message = "您已接入智能客服 \n\n您可以输入 '111' 关闭AI客服，输入 '222' 开启AI客服。"
-            hint_query = {
-                "type": "text",
-                "content": hint_message,
-                "from": "operator",
-                "origin": "chat",
-                "user": {
-                    "nickname": nicknames.get('system_message', '系统消息'),
-                    "avatar": avatars.get('system_message', 'https://example.com/system_avatar.png')
+            # 仅在会话的第一条消息时发送提示
+            if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
+                session["first_message"] = False  # 标记为已发送提示
+                hint_message = "您已接入智能客服 \n\n您可以输入 '111' 关闭AI客服，输入 '222' 开启AI客服。"
+                hint_query = {
+                    "type": "text",
+                    "content": hint_message,
+                    "from": "operator",
+                    "origin": "chat",
+                    "user": {
+                        "nickname": nicknames.get('system_message', '系统消息'),
+                        "avatar": avatars.get('system_message', 'https://example.com/system_avatar.png')
+                    }
                 }
-            }
-            client.website.send_message_in_conversation(websiteId, sessionId, hint_query)  # 发送提示消息
+                client.website.send_message_in_conversation(websiteId, sessionId, hint_query)  # 发送提示消息
 
-        result, autoreply = getKey(data["content"])
-        if result is True:
-            flow.append("")
-            flow.append(f"💡<b>自动回复</b>：{autoreply}")
-        elif openai is not None and session["enableAI"] is True:
-            response = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": payload},
-                    {"role": "user", "content": data["content"]}
-                ]
+            result, autoreply = getKey(data["content"])
+            if result is True:
+                flow.append("")
+                flow.append(f"💡<b>自动回复</b>：{autoreply}")
+            elif openai is not None and session["enableAI"] is True:
+                response = openai.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": payload},
+                        {"role": "user", "content": data["content"]}
+                    ]
+                )
+                autoreply = response.choices[0].message.content
+                flow.append("")
+                flow.append(f"💡<b>自动回复</b>：{autoreply}")
+            
+            if autoreply is not None:
+                query = {
+                    "type": "text",
+                    "content": autoreply,
+                    "from": "operator",
+                    "origin": "chat",
+                    "user": {
+                        "nickname": nicknames.get('ai_agent', 'AI客服'),
+                        "avatar": avatars.get('ai_agent', 'https://img.ixintu.com/download/jpg/20210125/8bff784c4e309db867d43785efde1daf_512_512.jpg')
+                    }
+                }
+                client.website.send_message_in_conversation(websiteId, sessionId, query)
+            await bot.send_message(
+                groupId,
+                '\n'.join(flow),
+                message_thread_id=session["topicId"]
             )
-            autoreply = response.choices[0].message.content
-            flow.append("")
-            flow.append(f"💡<b>自动回复</b>：{autoreply}")
-        
-        if autoreply is not None:
-            query = {
-                "type": "text",
-                "content": autoreply,
-                "from": "operator",
-                "origin": "chat",
-                "user": {
-                    "nickname": nicknames.get('ai_agent', 'AI客服'),
-                    "avatar": avatars.get('ai_agent', 'https://img.ixintu.com/download/jpg/20210125/8bff784c4e309db867d43785efde1daf_512_512.jpg')
-                }
-            }
-            client.website.send_message_in_conversation(websiteId, sessionId, query)
-        await bot.send_message(
-            groupId,
-            '\n'.join(flow),
-            message_thread_id=session["topicId"]
-        )
-    elif data["type"] == "file" and str(data["content"]["type"]).count("image") > 0:
-        # 处理从 Crisp 接收到的图片
-        flow = []
-        flow.append(f"📷 图片链接：{data['content']['url']}")
+        elif data["type"] == "file" and str(data["content"]["type"]).count("image") > 0:
+            # 处理从 Crisp 接收到的图片
+            flow = []
+            flow.append(f"📷 图片链接：{data['content']['url']}")
 
-        # 发送图片到 Telegram 群组
-        await bot.send_photo(
-            groupId,
-            data['content']['url'],
-            caption='\n'.join(flow),
-            parse_mode='HTML',
-            message_thread_id=session["topicId"]
-        )
-    else:
-        print("Unhandled Message Type : ", data["type"])
+            # 发送图片到 Telegram 群组
+            await bot.send_photo(
+                groupId,
+                data['content']['url'],
+                caption='\n'.join(flow),
+                parse_mode='HTML',
+                message_thread_id=session["topicId"]
+            )
+        else:
+            print("Unhandled Message Type : ", data["type"])
+    except Exception as error:
+        logging.error(f"发送消息时出错: {str(error)}")
+        # 如果是网络错误，等待后重试
+        if isinstance(error, requests.exceptions.ConnectionError):
+            await asyncio.sleep(2)
+            try:
+                # 重试一次
+                return await sendMessage(data)
+            except Exception as retry_error:
+                logging.error(f"重试发送消息失败: {str(retry_error)}")
+        # 继续执行，确保其他功能不受影响
 
-sio = socketio.AsyncClient(reconnection_attempts=5, logger=True)
 # Def Event Handlers
 @sio.on("connect")
 async def connect():
-    # 检查是否处于下班模式
-    if "" in config.get('autoreply', {}):
-        keyboard = [
-            [
-                InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
-                InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
-            ],
-            [
-                InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
-                InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
-            ],
-            [
-                InlineKeyboardButton("修改下班回复", callback_data="admin_edit_off_duty"),
-                InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
+    try:
+        # 检查是否处于下班模式
+        if "" in config.get('autoreply', {}):
+            keyboard = [
+                [
+                    InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                    InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+                ],
+                [
+                    InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+                    InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+                ],
+                [
+                    InlineKeyboardButton("修改下班回复", callback_data="admin_edit_off_duty"),
+                    InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")
+                ]
             ]
-        ]
-    else:
-        keyboard = [
-            [
-                InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
-                InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
-            ],
-            [
-                InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
-                InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
-            ],
-            [
-                InlineKeyboardButton("修改下班回复", callback_data="admin_edit_off_duty"),
-                InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
+        else:
+            keyboard = [
+                [
+                    InlineKeyboardButton("重启 Bot", callback_data="admin_restart_bot"),
+                    InlineKeyboardButton("新增关键字", callback_data="admin_keyword_add")
+                ],
+                [
+                    InlineKeyboardButton("修改关键字", callback_data="admin_keyword_edit"),
+                    InlineKeyboardButton("删除关键字", callback_data="admin_keyword_delete")
+                ],
+                [
+                    InlineKeyboardButton("修改下班回复", callback_data="admin_edit_off_duty"),
+                    InlineKeyboardButton("下班模式", callback_data="admin_off_duty")
+                ]
             ]
-        ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await callbackContext.bot.send_message(
-        groupId,
-        "已连接到 Crisp 服务器。",
-        reply_markup=reply_markup
-    )
-    await sio.emit("authentication", {
-        "tier": "plugin",
-        "username": config["crisp"]["id"],
-        "password": config["crisp"]["key"],
-        "events": [
-            "message:send",
-            "session:set_data"
-        ]})
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await callbackContext.bot.send_message(
+            groupId,
+            "已连接到 Crisp 服务器。",
+            reply_markup=reply_markup
+        )
+        await sio.emit("authentication", {
+            "tier": "plugin",
+            "username": config["crisp"]["id"],
+            "password": config["crisp"]["key"],
+            "events": [
+                "message:send",
+                "session:set_data"
+            ]})
+    except Exception as e:
+        logging.error(f"连接失败: {str(e)}")
+        # 如果是网络错误，等待后重试
+        if isinstance(e, (ConnectionError, requests.exceptions.ConnectionError)):
+            await asyncio.sleep(5)
+            try:
+                await connect()
+            except Exception as retry_error:
+                logging.error(f"重试连接失败: {str(retry_error)}")
 
 @sio.on("unauthorized")
 async def unauthorized(data):
@@ -623,13 +692,36 @@ async def connect_error():
         "无法连接到 Crisp 服务器。",
     )
     
-@sio.event
+@sio.on("disconnect")
 async def disconnect():
-    print("Disconnected from server.")
-    await callbackContext.bot.send_message(
-        groupId,
-        "与 Crisp 服务器断开连接。",
-    )
+    logging.warning("与 Crisp 服务器断开连接，尝试重新连接...")
+    while True:  # 持续尝试重连
+        try:
+            await callbackContext.bot.send_message(
+                groupId,
+                "与 Crisp 服务器断开连接，正在尝试重新连接...",
+            )
+            
+            # 尝试重新连接
+            await asyncio.sleep(5)
+            await sio.connect(
+                getCrispConnectEndpoints(),
+                transports="websocket",
+                wait_timeout=30,
+                socketio_path="socket.io"  # 明确指定 socket.io 路径
+            )
+            
+            # 如果连接成功，发送成功消息并退出循环
+            await callbackContext.bot.send_message(
+                groupId,
+                "已成功重新连接到 Crisp 服务器。",
+            )
+            break
+            
+        except Exception as e:
+            logging.error(f"重新连接失败: {str(e)}")
+            await asyncio.sleep(30)  # 失败后等待较长时间再重试
+            continue
     
 @sio.on("message:send")
 async def messageForward(data):
@@ -837,7 +929,6 @@ async def handle_admin_callback(update, context):
             # 如果当前是下班模式，显示恢复按钮
             if "" in config.get('autoreply', {}):
                 keyboard[-1] = [InlineKeyboardButton("恢复正常模式", callback_data="admin_normal_duty")]
-
             await query.message.edit_text(
                 "操作已取消。",
                 reply_markup=InlineKeyboardMarkup(keyboard)
