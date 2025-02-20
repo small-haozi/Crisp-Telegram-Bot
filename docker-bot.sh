@@ -385,6 +385,9 @@ update_bot() {
     else
         echo -e "${RED}更新失败，请检查网络连接或代码仓库状态${NC}"
     fi
+
+    chmod +x docker-bot.sh
+    
 }
 
 # 主菜单
