@@ -85,6 +85,10 @@ async def onReply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
         
     try:
+        # 检查消息是否有话题ID
+        if not msg.message_thread_id:
+            logging.warning("消息没有话题ID，可能是在主频道发送")
+            return
         # 先从内存中查找，如果找不到则从文件加载
         session_id = None
         for sid, data in context.bot_data.items():
