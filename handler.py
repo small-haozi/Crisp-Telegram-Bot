@@ -697,6 +697,11 @@ async def disconnect():
     logging.warning("与 Crisp 服务器断开连接，尝试重新连接...")
     while True:  # 持续尝试重连
         try:
+            # 先确保断开现有连接
+            if sio.connected:
+                await sio.disconnect()
+                await asyncio.sleep(1)
+            
             await callbackContext.bot.send_message(
                 groupId,
                 "与 Crisp 服务器断开连接，正在尝试重新连接...",
@@ -708,15 +713,16 @@ async def disconnect():
                 getCrispConnectEndpoints(),
                 transports="websocket",
                 wait_timeout=30,
-                socketio_path="socket.io"  # 明确指定 socket.io 路径
+                socketio_path="socket.io"
             )
             
             # 如果连接成功，发送成功消息并退出循环
-            await callbackContext.bot.send_message(
-                groupId,
-                "已成功重新连接到 Crisp 服务器。",
-            )
-            break
+            if sio.connected:
+                await callbackContext.bot.send_message(
+                    groupId,
+                    "已成功重新连接到 Crisp 服务器。",
+                )
+                break
             
         except Exception as e:
             logging.error(f"重新连接失败: {str(e)}")
