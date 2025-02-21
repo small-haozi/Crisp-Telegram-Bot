@@ -388,32 +388,63 @@ async def createSession(data):
             )
             
             # 发送元信息消息
-            msg = await bot.send_message(
-                groupId,
-                metas,
-                message_thread_id=topic.message_thread_id,
-                reply_markup=changeButton(session_id, enableAI),
-                parse_mode='MarkdownV2'
-            )
-            
-            # 保存映射到文件和内存，只保存必要信息
-            save_session_mapping(
-                session_id=session_id,
-                topic_id=topic.message_thread_id,
-                message_id=msg.message_id,
-                enable_ai=enableAI
-            )
-            
-            botData[session_id] = {
-                'topicId': topic.message_thread_id,
-                'messageId': msg.message_id,
-                'enableAI': enableAI,
-                'first_message': True  # 新会话设置为 True
-            }
+            try:
+                msg = await bot.send_message(
+                    groupId,
+                    metas,
+                    message_thread_id=topic.message_thread_id,
+                    reply_markup=changeButton(session_id, enableAI),
+                    parse_mode='MarkdownV2'
+                )
+                
+                # 保存映射到文件和内存，只保存必要信息
+                save_session_mapping(
+                    session_id=session_id,
+                    topic_id=topic.message_thread_id,
+                    message_id=msg.message_id,
+                    enable_ai=enableAI
+                )
+                
+                botData[session_id] = {
+                    'topicId': topic.message_thread_id,
+                    'messageId': msg.message_id,
+                    'enableAI': enableAI,
+                    'first_message': True  # 新会话设置为 True
+                }
+
+            except Exception as e:
+                logging.error(f"首次发送元信息失败: {str(e)}")
+                # 如果首次发送失败,等待短暂时间后重试
+                await asyncio.sleep(1)
+                try:
+                    msg = await bot.send_message(
+                        groupId,
+                        metas,
+                        message_thread_id=topic.message_thread_id,
+                        reply_markup=changeButton(session_id, enableAI),
+                        parse_mode='MarkdownV2'
+                    )
+                    
+                    # 更新映射和内存数据
+                    save_session_mapping(
+                        session_id=session_id,
+                        topic_id=topic.message_thread_id,
+                        message_id=msg.message_id,
+                        enable_ai=enableAI
+                    )
+                    
+                    botData[session_id] = {
+                        'topicId': topic.message_thread_id,
+                        'messageId': msg.message_id,
+                        'enableAI': enableAI,
+                        'first_message': True
+                    }
+                except Exception as retry_error:
+                    logging.error(f"重试发送元信息仍然失败: {str(retry_error)}")
 
         else:
             try:
-                # 直接更新消息
+                # 尝试更新现有消息
                 await bot.edit_message_text(
                     metas,
                     chat_id=groupId,
@@ -422,7 +453,28 @@ async def createSession(data):
                     parse_mode='MarkdownV2'
                 )
             except telegram.error.BadRequest as e:
-                if "Message is not modified" not in str(e):
+                if "Message to edit not found" in str(e):
+                    # 如果找不到要编辑的消息,重新发送一条
+                    try:
+                        msg = await bot.send_message(
+                            groupId,
+                            metas,
+                            message_thread_id=session['topicId'],
+                            reply_markup=changeButton(session_id, session.get("enableAI", False)),
+                            parse_mode='MarkdownV2'
+                        )
+                        
+                        # 更新消息ID
+                        session['messageId'] = msg.message_id
+                        save_session_mapping(
+                            session_id=session_id,
+                            topic_id=session['topicId'],
+                            message_id=msg.message_id,
+                            enable_ai=session.get("enableAI", False)
+                        )
+                    except Exception as send_error:
+                        logging.error(f"重新发送元信息失败: {str(send_error)}")
+                elif "Message is not modified" not in str(e):
                     logging.error(f"更新元信息失败: {str(e)}")
             except Exception as error:
                 logging.error(f"更新元信息失败: {str(error)}")
@@ -486,72 +538,6 @@ async def sendMessage(data):
         botData = callbackContext.bot_data
         sessionId = data["session_id"]
         session = botData.get(sessionId)
-
-        # 如果是新会话,创建话题并发送首条消息
-        if not session or not session.get("first_message"):
-            try:
-                # 获取会话元信息
-                metas = getMetas(sessionId)
-                
-                # 发送首条消息并创建话题
-                message = await bot.send_message(
-                    groupId,
-                    text=metas,
-                    parse_mode="Markdown"
-                )
-
-                # 保存会话信息
-                botData[sessionId] = {
-                    "topicId": message.message_thread_id,
-                    "messageId": message.message_id,
-                    "enableAI": False,
-                    "first_message": True
-                }
-
-                # 保存映射到文件
-                save_session_mapping(sessionId, message.message_thread_id, message.message_id, False)
-
-            except Exception as e:
-                logging.error(f"创建新会话失败: {str(e)}")
-                return
-
-        # 更新元信息
-        try:
-            metas = getMetas(sessionId)
-            await bot.edit_message_text(
-                chat_id=groupId,
-                message_id=botData[sessionId]["messageId"],
-                text=metas,
-                parse_mode="Markdown"
-            )
-        except telegram.error.BadRequest as e:
-            if "Message to edit not found" in str(e):
-                logging.warning("未找到可编辑的消息,尝试重新发送元信息")
-                try:
-                    # 重新发送元信息消息
-                    message = await bot.send_message(
-                        groupId,
-                        text=metas,
-                        parse_mode="Markdown"
-                    )
-                    
-                    # 更新会话信息
-                    botData[sessionId] = {
-                        "topicId": message.message_thread_id,
-                        "messageId": message.message_id,
-                        "enableAI": botData[sessionId].get("enableAI", False),
-                        "first_message": True
-                    }
-                    
-                    # 保存映射到文件
-                    save_session_mapping(sessionId, message.message_thread_id, message.message_id, False)
-                    
-                except Exception as retry_error:
-                    logging.error(f"重新发送元信息失败: {str(retry_error)}")
-            else:
-                logging.error(f"更新元信息失败: {str(e)}")
-        except Exception as e:
-            logging.error(f"更新元信息失败: {str(e)}")
 
         # 使用带重试的会话对象
         try:
