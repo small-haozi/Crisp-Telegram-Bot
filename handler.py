@@ -487,6 +487,72 @@ async def sendMessage(data):
         sessionId = data["session_id"]
         session = botData.get(sessionId)
 
+        # 如果是新会话,创建话题并发送首条消息
+        if not session or not session.get("first_message"):
+            try:
+                # 获取会话元信息
+                metas = getMetas(sessionId)
+                
+                # 发送首条消息并创建话题
+                message = await bot.send_message(
+                    groupId,
+                    text=metas,
+                    parse_mode="Markdown"
+                )
+
+                # 保存会话信息
+                botData[sessionId] = {
+                    "topicId": message.message_thread_id,
+                    "messageId": message.message_id,
+                    "enableAI": False,
+                    "first_message": True
+                }
+
+                # 保存映射到文件
+                save_session_mapping(sessionId, message.message_thread_id, message.message_id, False)
+
+            except Exception as e:
+                logging.error(f"创建新会话失败: {str(e)}")
+                return
+
+        # 更新元信息
+        try:
+            metas = getMetas(sessionId)
+            await bot.edit_message_text(
+                chat_id=groupId,
+                message_id=botData[sessionId]["messageId"],
+                text=metas,
+                parse_mode="Markdown"
+            )
+        except telegram.error.BadRequest as e:
+            if "Message to edit not found" in str(e):
+                logging.warning("未找到可编辑的消息,尝试重新发送元信息")
+                try:
+                    # 重新发送元信息消息
+                    message = await bot.send_message(
+                        groupId,
+                        text=metas,
+                        parse_mode="Markdown"
+                    )
+                    
+                    # 更新会话信息
+                    botData[sessionId] = {
+                        "topicId": message.message_thread_id,
+                        "messageId": message.message_id,
+                        "enableAI": botData[sessionId].get("enableAI", False),
+                        "first_message": True
+                    }
+                    
+                    # 保存映射到文件
+                    save_session_mapping(sessionId, message.message_thread_id, message.message_id, False)
+                    
+                except Exception as retry_error:
+                    logging.error(f"重新发送元信息失败: {str(retry_error)}")
+            else:
+                logging.error(f"更新元信息失败: {str(e)}")
+        except Exception as e:
+            logging.error(f"更新元信息失败: {str(e)}")
+
         # 使用带重试的会话对象
         try:
             client.website.mark_messages_read_in_conversation(
