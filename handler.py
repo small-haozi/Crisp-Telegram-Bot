@@ -381,23 +381,23 @@ async def createSession(data):
         if session is None:
             enableAI = False if openai is None else True
             # 创建新话题
-            topic = await bot.create_forum_topic(
-                chat_id=groupId,
-                name=nickname,
-                icon_color=0x6FB9F0
-            )
-            
-            # 发送元信息消息
             try:
+                topic = await bot.create_forum_topic(
+                    chat_id=groupId,
+                    name=nickname,
+                    icon_color=0x6FB9F0
+                )
+                
+                # 发送元信息消息
                 msg = await bot.send_message(
-                    groupId,
-                    metas,
-                    message_thread_id=topic.message_thread_id,
+                    chat_id=groupId,  # 明确指定chat_id
+                    text=metas,
+                    message_thread_id=topic.message_thread_id,  # 确保消息发送到正确的话题
                     reply_markup=changeButton(session_id, enableAI),
                     parse_mode='MarkdownV2'
                 )
                 
-                # 保存映射到文件和内存，只保存必要信息
+                # 保存映射到文件和内存
                 save_session_mapping(
                     session_id=session_id,
                     topic_id=topic.message_thread_id,
@@ -409,23 +409,29 @@ async def createSession(data):
                     'topicId': topic.message_thread_id,
                     'messageId': msg.message_id,
                     'enableAI': enableAI,
-                    'first_message': True  # 新会话设置为 True
+                    'first_message': True
                 }
-
+                
             except Exception as e:
-                logging.error(f"首次发送元信息失败: {str(e)}")
-                # 如果首次发送失败,等待短暂时间后重试
+                logging.error(f"创建话题或发送首条消息失败: {str(e)}")
+                # 重试一次
                 await asyncio.sleep(1)
                 try:
+                    if not topic:
+                        topic = await bot.create_forum_topic(
+                            chat_id=groupId,
+                            name=nickname,
+                            icon_color=0x6FB9F0
+                        )
+                    
                     msg = await bot.send_message(
-                        groupId,
-                        metas,
+                        chat_id=groupId,
+                        text=metas,
                         message_thread_id=topic.message_thread_id,
                         reply_markup=changeButton(session_id, enableAI),
                         parse_mode='MarkdownV2'
                     )
                     
-                    # 更新映射和内存数据
                     save_session_mapping(
                         session_id=session_id,
                         topic_id=topic.message_thread_id,
@@ -440,13 +446,13 @@ async def createSession(data):
                         'first_message': True
                     }
                 except Exception as retry_error:
-                    logging.error(f"重试发送元信息仍然失败: {str(retry_error)}")
+                    logging.error(f"重试创建话题和发送消息失败: {str(retry_error)}")
 
         else:
             try:
-                # 尝试更新现有消息
+                # 更新现有消息
                 await bot.edit_message_text(
-                    metas,
+                    text=metas,
                     chat_id=groupId,
                     message_id=session['messageId'],
                     reply_markup=changeButton(session_id, session.get("enableAI", False)),
@@ -454,12 +460,12 @@ async def createSession(data):
                 )
             except telegram.error.BadRequest as e:
                 if "Message to edit not found" in str(e):
-                    # 如果找不到要编辑的消息,重新发送一条
                     try:
+                        # 重新发送消息到正确的话题
                         msg = await bot.send_message(
-                            groupId,
-                            metas,
-                            message_thread_id=session['topicId'],
+                            chat_id=groupId,
+                            text=metas,
+                            message_thread_id=session['topicId'],  # 使用保存的话题ID
                             reply_markup=changeButton(session_id, session.get("enableAI", False)),
                             parse_mode='MarkdownV2'
                         )
