@@ -413,7 +413,7 @@ async def createSession(data):
 
         else:
             try:
-                # 尝试更新现有消息
+                # 直接更新消息
                 await bot.edit_message_text(
                     metas,
                     chat_id=groupId,
@@ -422,30 +422,7 @@ async def createSession(data):
                     parse_mode='MarkdownV2'
                 )
             except telegram.error.BadRequest as e:
-                if "Message to edit not found" in str(e):
-                    logging.warning(f"找不到要编辑的消息(ID: {session['messageId']})，尝试重新发送")
-                    try:
-                        # 重新发送元信息消息
-                        msg = await bot.send_message(
-                            groupId,
-                            metas,
-                            message_thread_id=session['topicId'],
-                            reply_markup=changeButton(session_id, session.get("enableAI", False)),
-                            parse_mode='MarkdownV2'
-                        )
-                        # 更新消息ID
-                        session['messageId'] = msg.message_id
-                        # 更新映射
-                        save_session_mapping(
-                            session_id=session_id,
-                            topic_id=session['topicId'],
-                            message_id=msg.message_id,
-                            enable_ai=session.get("enableAI", False)
-                        )
-                        logging.info(f"已重新发送元信息消息，新消息ID: {msg.message_id}")
-                    except Exception as send_error:
-                        logging.error(f"重新发送元信息失败: {str(send_error)}")
-                elif "Message is not modified" not in str(e):
+                if "Message is not modified" not in str(e):
                     logging.error(f"更新元信息失败: {str(e)}")
             except Exception as error:
                 logging.error(f"更新元信息失败: {str(error)}")
