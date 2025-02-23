@@ -7,3 +7,4 @@ Requests==2.31.0
 boto3==1.34.34
 aiohttp==3.9.1
 Pillow==9.5.0
+pydub==0.25.1
