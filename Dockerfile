@@ -5,6 +5,7 @@ WORKDIR /app
 # 安装必要的系统依赖
 RUN apt-get update && apt-get install -y \
     git \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制项目文件
