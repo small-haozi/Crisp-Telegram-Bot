@@ -538,90 +538,90 @@ async def sendMessage(data):
 
         logging.info(f"准备发送消息到话题 {session['topicId']}")
 
-        # 处理不同类型的消息
         content = data.get("content", "")
         
-        # 检查content是否是字典类型且包含url和type字段
+        # 处理音频和视频文件
         if isinstance(content, dict) and 'url' in content and 'type' in content:
             file_url = content['url']
             mime_type = content['type']
             duration = content.get('duration')
             
-            logging.info(f"检测到文件消息，URL: {file_url}, MIME类型: {mime_type}")
-            
-            try:
-                # 下载文件
-                response = requests.get(file_url, timeout=30)
-                response.raise_for_status()
-                file_content = response.content
+            # 只处理音频和视频
+            if mime_type.startswith(('audio/', 'video/')):
+                logging.info(f"检测到媒体文件，URL: {file_url}, MIME类型: {mime_type}")
                 
-                # 处理音频文件
-                if mime_type and mime_type.startswith('audio/'):
-                    try:
-                        # 创建临时文件来处理音频
-                        with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_in:
-                            temp_in.write(file_content)
-                            temp_in_path = temp_in.name
-
-                        with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_out:
-                            temp_out_path = temp_out.name
-
-                        # 转换音频格式
-                        audio = AudioSegment.from_file(temp_in_path)
-                        audio.export(temp_out_path, format='ogg')
-
-                        # 读取转换后的文件
-                        with open(temp_out_path, 'rb') as audio_file:
-                            converted_audio = audio_file.read()
-
-                        # 发送音频
-                        await bot.send_voice(
-                            chat_id=groupId,
-                            voice=converted_audio,
-                            message_thread_id=session["topicId"],
-                            caption="🎤 用户发送的语音",
-                            duration=duration
-                        )
-                        logging.info("音频发送成功")
-                        
-                    except Exception as audio_error:
-                        logging.error(f"处理音频失败: {str(audio_error)}")
-                        # 如果转换失败，发送下载链接
-                        await bot.send_message(
-                            chat_id=groupId,
-                            text=f"🎵 无法直接发送音频，请通过链接下载：\n{file_url}",
-                            message_thread_id=session["topicId"]
-                        )
-                    finally:
-                        # 清理临时文件
-                        try:
-                            os.unlink(temp_in_path)
-                            os.unlink(temp_out_path)
-                        except:
-                            pass
-                    return
+                try:
+                    # 下载文件
+                    response = requests.get(file_url, timeout=30)
+                    response.raise_for_status()
+                    file_content = response.content
                     
-                # 处理视频文件
-                elif mime_type and mime_type.startswith('video/'):
-                    await bot.send_video(
-                        chat_id=groupId,
-                        video=file_content,
-                        message_thread_id=session["topicId"],
-                        caption="📹 用户发送的视频"
-                    )
-                    logging.info("视频发送成功")
+                    # 处理音频文件
+                    if mime_type.startswith('audio/'):
+                        try:
+                            # 创建临时文件来处理音频
+                            with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_in:
+                                temp_in.write(file_content)
+                                temp_in_path = temp_in.name
+
+                            with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_out:
+                                temp_out_path = temp_out.name
+
+                            # 转换音频格式
+                            audio = AudioSegment.from_file(temp_in_path)
+                            audio.export(temp_out_path, format='ogg')
+
+                            # 读取转换后的文件
+                            with open(temp_out_path, 'rb') as audio_file:
+                                converted_audio = audio_file.read()
+
+                            # 发送音频
+                            await bot.send_voice(
+                                chat_id=groupId,
+                                voice=converted_audio,
+                                message_thread_id=session["topicId"],
+                                caption="🎤 用户发送的语音",
+                                duration=duration
+                            )
+                            logging.info("音频发送成功")
+                            
+                        except Exception as audio_error:
+                            logging.error(f"处理音频失败: {str(audio_error)}")
+                            await bot.send_message(
+                                chat_id=groupId,
+                                text=f"🎵 无法直接发送音频，请通过链接下载：\n{file_url}",
+                                message_thread_id=session["topicId"]
+                            )
+                        finally:
+                            # 清理临时文件
+                            try:
+                                os.unlink(temp_in_path)
+                                os.unlink(temp_out_path)
+                            except:
+                                pass
+                    
+                    # 处理视频文件
+                    elif mime_type.startswith('video/'):
+                        await bot.send_video(
+                            chat_id=groupId,
+                            video=file_content,
+                            message_thread_id=session["topicId"],
+                            caption="📹 用户发送的视频"
+                        )
+                        logging.info("视频发送成功")
+                    
                     return
 
-            except Exception as e:
-                logging.error(f"处理文件失败: {str(e)}")
-                await bot.send_message(
-                    chat_id=groupId,
-                    text=f"📎 文件处理失败，请通过链接下载：\n{file_url}",
-                    message_thread_id=session["topicId"]
-                )
-                return
+                except Exception as e:
+                    logging.error(f"处理媒体文件失败: {str(e)}")
+                    await bot.send_message(
+                        chat_id=groupId,
+                        text=f"📎 文件处理失败，请通过链接下载：\n{file_url}",
+                        message_thread_id=session["topicId"]
+                    )
+                    return
 
-        # 处理普通文本消息
+        # 处理其他所有消息类型（包括图片、文本等）
         flow = []
         flow.append(f"🧾<b>消息推送</b>： {data['content']}")
 
