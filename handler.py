@@ -23,6 +23,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib.parse import urlparse
 import mimetypes
+import tempfile
+from pydub import AudioSegment
 
 
 
@@ -543,9 +545,15 @@ async def sendMessage(data):
         try:
             if message_type == "file":
                 # 获取文件URL和MIME类型
-                file_url = content.get("url") if isinstance(content, dict) else content
-                mime_type = content.get("type") if isinstance(content, dict) else mimetypes.guess_type(file_url)[0]
-                
+                if isinstance(content, dict):
+                    file_url = content.get("url")
+                    mime_type = content.get("type")
+                    duration = content.get("duration")  # 获取音频时长
+                else:
+                    file_url = content
+                    mime_type = mimetypes.guess_type(file_url)[0]
+                    duration = None
+
                 if not file_url:
                     logging.error("文件URL为空")
                     return
@@ -574,22 +582,57 @@ async def sendMessage(data):
 
                 # 处理音频文件
                 elif mime_type and (mime_type.startswith('audio/') or mime_type == 'application/ogg'):
-                    # 对于音频文件，根据格式选择合适的发送方法
-                    if mime_type in ['audio/ogg', 'application/ogg']:
-                        await bot.send_voice(
+                    try:
+                        # 创建临时文件来处理音频
+                        with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_in:
+                            temp_in.write(file_content)
+                            temp_in_path = temp_in.name
+
+                        with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_out:
+                            temp_out_path = temp_out.name
+
+                        # 转换音频格式
+                        audio = AudioSegment.from_file(temp_in_path)
+                        audio.export(temp_out_path, format='ogg')
+
+                        # 读取转换后的文件
+                        with open(temp_out_path, 'rb') as audio_file:
+                            converted_audio = audio_file.read()
+
+                        # 发送音频
+                        if mime_type == 'audio/webm':
+                            await bot.send_voice(
+                                chat_id=groupId,
+                                voice=converted_audio,
+                                message_thread_id=session["topicId"],
+                                caption="🎤 用户发送的语音",
+                                duration=duration
+                            )
+                        else:
+                            await bot.send_audio(
+                                chat_id=groupId,
+                                audio=converted_audio,
+                                message_thread_id=session["topicId"],
+                                caption="🎵 用户发送的音频",
+                                duration=duration
+                            )
+                        logging.info("音频发送成功")
+
+                    except Exception as audio_error:
+                        logging.error(f"处理音频失败: {str(audio_error)}")
+                        # 如果转换失败，发送下载链接
+                        await bot.send_message(
                             chat_id=groupId,
-                            voice=file_content,
-                            message_thread_id=session["topicId"],
-                            caption="🎤 用户发送的语音"
+                            text=f"🎵 无法直接发送音频，请通过链接下载：\n{file_url}",
+                            message_thread_id=session["topicId"]
                         )
-                    else:
-                        await bot.send_audio(
-                            chat_id=groupId,
-                            audio=file_content,
-                            message_thread_id=session["topicId"],
-                            caption="🎵 用户发送的音频"
-                        )
-                    logging.info("音频发送成功")
+                    finally:
+                        # 清理临时文件
+                        try:
+                            os.unlink(temp_in_path)
+                            os.unlink(temp_out_path)
+                        except:
+                            pass
                     return
 
             # 处理普通文本消息
