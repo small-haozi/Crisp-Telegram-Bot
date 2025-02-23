@@ -540,14 +540,25 @@ async def sendMessage(data):
 
         content = data.get("content", "")
         
-        # 处理音频和视频文件
+        # 处理音频、视频和图片文件
         if isinstance(content, dict) and 'url' in content and 'type' in content:
             file_url = content['url']
             mime_type = content['type']
-            duration = content.get('duration')
             
-            # 只处理音频和视频
-            if mime_type.startswith(('audio/', 'video/')):
+            # 处理图片 - 直接使用原始URL
+            if mime_type.startswith('image/'):
+                markdown_image = f"[![image]({file_url})]({file_url}) \n点击图片可查看高清大图"
+                await bot.send_message(
+                    chat_id=groupId,
+                    text=markdown_image,
+                    message_thread_id=session["topicId"],
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # 处理音频和视频
+            elif mime_type.startswith(('audio/', 'video/')):
+                duration = content.get('duration')
                 logging.info(f"检测到媒体文件，URL: {file_url}, MIME类型: {mime_type}")
                 
                 try:
@@ -621,7 +632,7 @@ async def sendMessage(data):
                     )
                     return
 
-        # 处理其他所有消息类型（包括图片、文本等）
+        # 处理其他所有消息类型（文本等）
         flow = []
         flow.append(f"🧾<b>消息推送</b>： {data['content']}")
 
