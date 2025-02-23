@@ -547,14 +547,19 @@ async def sendMessage(data):
             
             # 处理图片 - 直接使用原始URL
             if mime_type.startswith('image/'):
-                markdown_image = f"[![image]({file_url})]({file_url}) \n点击图片可查看高清大图"
-                await bot.send_message(
-                    chat_id=groupId,
-                    text=markdown_image,
-                    message_thread_id=session["topicId"],
-                    parse_mode='Markdown'
-                )
-                return
+                try:
+                    # 使用 HTML 格式发送图片链接
+                    html_message = f'📷 用户发送的图片：\n<a href="{file_url}">点击查看图片</a>'
+                    await bot.send_message(
+                        chat_id=groupId,
+                        text=html_message,
+                        message_thread_id=session["topicId"],
+                        parse_mode='HTML'
+                    )
+                    return
+                except Exception as e:
+                    logging.error(f"发送图片消息失败: {str(e)}")
+                    # 如果发送失败，继续使用默认文本格式
             
             # 处理音频和视频
             elif mime_type.startswith(('audio/', 'video/')):
