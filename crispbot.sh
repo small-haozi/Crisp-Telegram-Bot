@@ -166,6 +166,20 @@ install() {
 
     sudo timedatectl set-timezone Asia/Shanghai
     check_environment
+    # 安装系统依赖
+    echo -e "${YELLOW}正在安装系统依赖...${NC}"
+    if command -v apt-get &> /dev/null; then
+        # Debian/Ubuntu 系统
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+    elif command -v yum &> /dev/null; then
+        # CentOS 系统
+        sudo yum install -y epel-release
+        sudo yum install -y ffmpeg ffmpeg-devel
+    else
+        echo -e "${RED}无法识别的系统包管理器，请手动安装 ffmpeg${NC}"
+        exit 1
+    fi
     install_dependencies
     configure_bot
     
@@ -333,10 +347,31 @@ update() {
     # 备份当前配置
     cp config.yml config.yml.bak
     
-    # 拉取特定文件
-    git fetch origin main
-    git checkout origin/main -- bot.py handler.py location_names.py requirements.txt config.yml.example
+    # 添加重试机制
+    max_retries=3
+    retry_count=0
+    while [ $retry_count -lt $max_retries ]; do
+        echo -e "${YELLOW}尝试拉取更新 (${retry_count}/${max_retries})${NC}"
+        
+        # 拉取特定文件
+        git fetch origin main
+        if git checkout origin/main -- bot.py handler.py location_names.py requirements.txt config.yml.example; then
+            echo -e "${GREEN}成功拉取更新${NC}"
+            break
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                echo -e "${YELLOW}拉取失败，等待 5 秒后重试...${NC}"
+                sleep 5
+            fi
+        fi
+    done
     
+    if [ $retry_count -eq $max_retries ]; then
+        echo -e "${RED}更新失败，请稍后重试${NC}"
+        return 1
+    fi
+
     # 检查并更新配置文件
     check_and_add_config
     
