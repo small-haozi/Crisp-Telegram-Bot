@@ -539,49 +539,24 @@ async def sendMessage(data):
         logging.info(f"准备发送消息到话题 {session['topicId']}")
 
         # 处理不同类型的消息
-        message_type = data.get("type", "text")
         content = data.get("content", "")
         
-        try:
-            if message_type == "file":
-                # 获取文件URL和MIME类型
-                if isinstance(content, dict):
-                    file_url = content.get("url")
-                    mime_type = content.get("type")
-                    duration = content.get("duration")  # 获取音频时长
-                else:
-                    file_url = content
-                    mime_type = mimetypes.guess_type(file_url)[0]
-                    duration = None
-
-                if not file_url:
-                    logging.error("文件URL为空")
-                    return
-                    
-                logging.info(f"收到文件，URL: {file_url}, MIME类型: {mime_type}")
-                
+        # 检查content是否是字典类型且包含url和type字段
+        if isinstance(content, dict) and 'url' in content and 'type' in content:
+            file_url = content['url']
+            mime_type = content['type']
+            duration = content.get('duration')
+            
+            logging.info(f"检测到文件消息，URL: {file_url}, MIME类型: {mime_type}")
+            
+            try:
                 # 下载文件
-                try:
-                    response = requests.get(file_url, timeout=30)
-                    response.raise_for_status()
-                    file_content = response.content
-                except Exception as e:
-                    logging.error(f"下载文件失败: {str(e)}")
-                    return
-
-                # 处理视频文件
-                if mime_type and mime_type.startswith('video/'):
-                    await bot.send_video(
-                        chat_id=groupId,
-                        video=file_content,
-                        message_thread_id=session["topicId"],
-                        caption="📹 用户发送的视频"
-                    )
-                    logging.info("视频发送成功")
-                    return
-
+                response = requests.get(file_url, timeout=30)
+                response.raise_for_status()
+                file_content = response.content
+                
                 # 处理音频文件
-                elif mime_type and (mime_type.startswith('audio/') or mime_type == 'application/ogg'):
+                if mime_type and mime_type.startswith('audio/'):
                     try:
                         # 创建临时文件来处理音频
                         with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_in:
@@ -600,24 +575,15 @@ async def sendMessage(data):
                             converted_audio = audio_file.read()
 
                         # 发送音频
-                        if mime_type == 'audio/webm':
-                            await bot.send_voice(
-                                chat_id=groupId,
-                                voice=converted_audio,
-                                message_thread_id=session["topicId"],
-                                caption="🎤 用户发送的语音",
-                                duration=duration
-                            )
-                        else:
-                            await bot.send_audio(
-                                chat_id=groupId,
-                                audio=converted_audio,
-                                message_thread_id=session["topicId"],
-                                caption="🎵 用户发送的音频",
-                                duration=duration
-                            )
+                        await bot.send_voice(
+                            chat_id=groupId,
+                            voice=converted_audio,
+                            message_thread_id=session["topicId"],
+                            caption="🎤 用户发送的语音",
+                            duration=duration
+                        )
                         logging.info("音频发送成功")
-
+                        
                     except Exception as audio_error:
                         logging.error(f"处理音频失败: {str(audio_error)}")
                         # 如果转换失败，发送下载链接
@@ -634,31 +600,38 @@ async def sendMessage(data):
                         except:
                             pass
                     return
+                    
+                # 处理视频文件
+                elif mime_type and mime_type.startswith('video/'):
+                    await bot.send_video(
+                        chat_id=groupId,
+                        video=file_content,
+                        message_thread_id=session["topicId"],
+                        caption="📹 用户发送的视频"
+                    )
+                    logging.info("视频发送成功")
+                    return
 
-            # 处理普通文本消息
-            flow = []
-            flow.append(f"🧾<b>消息推送</b>： {data['content']}")
-
-            await bot.send_message(
-                chat_id=groupId,
-                text='\n'.join(flow),
-                message_thread_id=session["topicId"],
-                parse_mode='HTML'
-            )
-            logging.info(f"消息已发送到话题 {session['topicId']}")
-
-        except telegram.error.BadRequest as e:
-            logging.error(f"发送消息失败 (BadRequest): {str(e)}")
-            # 如果文件太大，尝试发送链接
-            if "File is too large" in str(e):
+            except Exception as e:
+                logging.error(f"处理文件失败: {str(e)}")
                 await bot.send_message(
                     chat_id=groupId,
-                    text=f"📎 文件太大无法直接发送，请通过链接下载：\n{file_url}",
+                    text=f"📎 文件处理失败，请通过链接下载：\n{file_url}",
                     message_thread_id=session["topicId"]
                 )
-        except Exception as e:
-            logging.error(f"发送消息失败: {str(e)}")
-            raise
+                return
+
+        # 处理普通文本消息
+        flow = []
+        flow.append(f"🧾<b>消息推送</b>： {data['content']}")
+
+        await bot.send_message(
+            chat_id=groupId,
+            text='\n'.join(flow),
+            message_thread_id=session["topicId"],
+            parse_mode='HTML'
+        )
+        logging.info(f"消息已发送到话题 {session['topicId']}")
 
     except Exception as error:
         logging.error(f"处理消息失败: {str(error)}")
