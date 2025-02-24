@@ -6,467 +6,452 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 服务名称
-SERVICE_NAME="bot.service"
-
-# 获取脚本所在目录
-BOT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")" )" &> /dev/null && pwd )"
+# 获取脚本的真实路径（处理符号链接）
+SCRIPT_PATH=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
 
 # 脚本名称
 SCRIPT_NAME=$(basename "$0")
 
-# 检查是否以root权限运行
-if [ "$EUID" -ne 0 ]; then
-    echo -e "${RED}请以root权限运行此脚本${NC}"
-    exit
-fi
-
 # 创建符号链接函数
 create_symlink() {
-    if [ ! -L "/usr/local/bin/crispbot" ]; then
-        ln -s "$BOT_DIR/$SCRIPT_NAME" /usr/local/bin/crispbot
-        echo -e "${GREEN}符号链接已创建。现在可以使用 'crispbot' 命令来运行此脚本。${NC}"
-    else
-        echo -e "${YELLOW}符号链接 'crispbot' 已存在。${NC}"
+    if [ ! -L "/usr/local/bin/docker-bot" ]; then
+        sudo ln -s "$SCRIPT_PATH" /usr/local/bin/docker-bot
+        echo -e "${GREEN}符号链接已创建。现在可以使用 'docker-bot' 命令来运行此脚本。${NC}"
     fi
 }
 
-# 检查环境函数
-check_environment() {
-    echo -e "${YELLOW}正在检查环境...${NC}"
-    
-    # 检查并安装 Python3
-    if ! command -v python3 &> /dev/null; then
-        echo -e "${YELLOW}未检测到 Python3，正在尝试安装...${NC}"
-        if [ -f /etc/debian_version ]; then
-            # Debian/Ubuntu 系统
-            sudo apt-get update && sudo apt-get install -y python3
-        elif [ -f /etc/redhat-release ]; then
-            # CentOS/RHEL 系统
-            sudo yum install -y python3
-        else
-            echo -e "${RED}无法确定系统类型，请手动安装 Python3${NC}"
+# 检查是否安装了sudo
+check_sudo() {
+    if ! command -v sudo &> /dev/null; then
+        echo -e "${RED}sudo未安装，正在安装...${NC}"
+        # 使用su切换到root用户安装sudo
+        su -c "apt-get update && apt-get install -y sudo"
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}安装sudo失败，请手动安装后再运行此脚本${NC}"
             exit 1
         fi
     fi
     
-    # 检查并安装 pip3
-    if ! command -v pip3 &> /dev/null; then
-        echo -e "${YELLOW}未检测到 pip3，正在尝试安装...${NC}"
-        if [ -f /etc/debian_version ]; then
-            # Debian/Ubuntu 系统
-            sudo apt-get update && sudo apt-get install -y python3-pip
-        elif [ -f /etc/redhat-release ]; then
-            # CentOS/RHEL 系统
-            sudo yum install -y python3-pip
-        else
-            echo -e "${RED}无法确定系统类型，请手动安装 pip3${NC}"
+    # 检查当前用户是否在sudo组中
+    if ! groups | grep -q '\bsudo\b'; then
+        echo -e "${YELLOW}当前用户不在sudo组中，尝试添加...${NC}"
+        su -c "usermod -aG sudo $USER"
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}添加用户到sudo组失败，请手动配置sudo权限${NC}"
             exit 1
         fi
-    fi
-    
-    # 再次检查是否安装成功
-    if command -v python3 &> /dev/null && command -v pip3 &> /dev/null; then
-        echo -e "${GREEN}环境检查通过${NC}"
-    else
-        echo -e "${RED}环境检查失败，请手动安装 Python3 和 pip3${NC}"
+        echo -e "${GREEN}已添加当前用户到sudo组，请重新登录后再运行此脚本${NC}"
         exit 1
     fi
 }
 
-# 安装依赖函数
-install_dependencies() {
-    echo -e "${YELLOW}正在安装依赖...${NC}"
-
-    sudo apt install python3-venv
-    
-    # 确保 requirements.txt 存在
-    if [ ! -f "$BOT_DIR/requirements.txt" ]; then
-        echo -e "${RED}未找到 requirements.txt 文件${NC}"
-        exit 1
+# 检查是否安装了Docker和Docker Compose
+check_docker() {
+    if ! command -v docker &> /dev/null; then
+        echo -e "${RED}Docker未安装，正在安装...${NC}"
+        curl -fsSL https://get.docker.com | sh
+        systemctl start docker
+        systemctl enable docker
     fi
 
-    # 创建虚拟环境
-    python3 -m venv "$BOT_DIR/venv"
-    
-    # 激活虚拟环境
-    source "$BOT_DIR/venv/bin/activate"
-    
-    # 安装依赖
-    pip install -r "$BOT_DIR/requirements.txt"
-    
-    echo -e "${GREEN}依赖安装完成${NC}"
-}
-
-# 卸载函数
-uninstall() {
-    echo -e "${YELLOW}正在卸载 Telegram Bot...${NC}"
-    
-    # 停止服务
-    sudo systemctl stop $SERVICE_NAME
-    
-    # 禁用服务
-    sudo systemctl disable $SERVICE_NAME
-    
-    # 删除服务文件
-    sudo rm /etc/systemd/system/$SERVICE_NAME
-    
-    # 重新加载systemd
-    sudo systemctl daemon-reload
-    
-    # 提示用户是否要删除Bot目录
-    read -p "是否删除Bot目录 ($BOT_DIR)? [y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        rm -rf $BOT_DIR
-        echo -e "${GREEN}Bot目录已删除${NC}"
-    else
-        echo -e "${YELLOW}Bot目录未删除${NC}"
-    fi
-    
-    echo -e "${GREEN}卸载完成${NC}"
-}
-
-# 配置引导函数
-configure_bot() {
-    echo -e "${YELLOW}开始配置 Bot...${NC}"
-    
-    # 检查配置文件是否存在
-    if [ ! -f "$BOT_DIR/config.yml" ]; then
-        if [ -f "$BOT_DIR/config.yml.example" ]; then
-            cp "$BOT_DIR/config.yml.example" "$BOT_DIR/config.yml"
-            echo -e "${GREEN}已从示例文件创建配置文件${NC}"
-        else
-            echo -e "${RED}未找到配置文件模板${NC}"
-            exit 1
-        fi
-    fi
-    
-    # 提示用户编辑配置文件
-    echo -e "${YELLOW}请编辑 $BOT_DIR/config.yml 文件，填入必要的配置信息${NC}"
-    read -p "请修改本目录（$BOT_DIR）的config.yml后，按回车键继续..."
-}
-
-# 添加计划任务函数
-add_cron_job() {
-    echo -e "${YELLOW}正在添加计划任务...${NC}"
-    
-    # 创建包含所有命令的 cron 任务
-    CRON_CMD="30 3 * * * systemctl daemon-reload; systemctl kill -s SIGKILL bot.service 2>/dev/null; sleep 0.5; systemctl start bot.service"
-    
-    # 添加到 crontab
-    (crontab -l 2>/dev/null | grep -v "bot.service"; echo "$CRON_CMD") | crontab -
-    
-    echo -e "${GREEN}计划任务已添加，每天 3:30 快速重启 Bot 服务${NC}"
-}
-
-# 安装函数
-install() {
-    echo -e "${YELLOW}开始安装 Telegram Bot...${NC}"
-
-    sudo timedatectl set-timezone Asia/Shanghai
-    check_environment
-    # 安装系统依赖
-    echo -e "${YELLOW}正在安装系统依赖...${NC}"
-    if command -v apt-get &> /dev/null; then
-        # Debian/Ubuntu 系统
-        sudo apt-get update
-        sudo apt-get install -y ffmpeg
-    elif command -v yum &> /dev/null; then
-        # CentOS 系统
-        sudo yum install -y epel-release
-        sudo yum install -y ffmpeg ffmpeg-devel
-    else
-        echo -e "${RED}无法识别的系统包管理器，请手动安装 ffmpeg${NC}"
-        exit 1
-    fi
-    install_dependencies
-    configure_bot
-    
-    # 创建服务文件
-    cat > /etc/systemd/system/$SERVICE_NAME <<EOL
-[Unit]
-Description=Telegram Bot Service
-After=network.target
-
-[Service]
-ExecStart=$BOT_DIR/venv/bin/python $BOT_DIR/bot.py
-WorkingDirectory=$BOT_DIR
-StandardOutput=inherit
-StandardError=inherit
-Restart=always
-User=root
-
-[Install]
-WantedBy=multi-user.target
-EOL
-
-    # 重新加载systemd
-    systemctl daemon-reload
-
-    # 启用服务
-    systemctl enable $SERVICE_NAME
-
-    # 启动服务
-    systemctl start $SERVICE_NAME
-
-    # 创建符号链接
-    create_symlink
-
-    # 添加计划任务
-    add_cron_job
-
-    echo -e "${GREEN}安装完成并已启动服务${NC}"
-}
-
-# 添加一个等待服务状态的函数，带超时机制
-wait_for_service_status() {
-    local desired_status=$1  # "active" 或 "inactive"
-    local timeout=10         # 最大等待秒数
-    local counter=0
-    
-    while [ $counter -lt $timeout ]; do
-        if [ "$desired_status" = "active" ]; then
-            systemctl is-active --quiet bot.service && return 0
-        else
-            ! systemctl is-active --quiet bot.service && return 0
-        fi
-        sleep 0.5
-        counter=$((counter + 1))
-    done
-    return 1  # 超时
-}
-
-# 优化后的启动函数
-start() {
-    if systemctl is-active --quiet bot.service; then
-        echo -e "${YELLOW}Bot 已经在运行中。${NC}"
-        return
-    fi
-    
-    echo -e "${YELLOW}正在启动 Bot 服务...${NC}"
-    systemctl daemon-reload
-    systemctl start bot.service
-    
-    if wait_for_service_status "active"; then
-        echo -e "${GREEN}Bot 已成功启动！${NC}"
-    else
-        echo -e "${RED}Bot 启动超时，请检查日志文件。${NC}"
+    if ! command -v docker-compose &> /dev/null; then
+        echo -e "${RED}Docker Compose未安装，正在安装...${NC}"
+        curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
     fi
 }
 
-# 优化后的重启函数
-restart() {
-    echo -e "${YELLOW}正在重启 Bot 服务...${NC}"
-    
-    # 先重新加载 systemd 配置
-    systemctl daemon-reload
-    
-    # 直接使用 SIGKILL 强制结束进程
-    systemctl kill -s SIGKILL bot.service 2>/dev/null
-    
-    # 短暂等待确保进程已经结束
-    sleep 0.5
-    
-    # 启动服务
-    systemctl start bot.service
-    
-    # 使用更短的超时检查
-    if wait_for_service_status "active"; then
-        echo -e "${GREEN}Bot 已成功重启！${NC}"
-    else
-        echo -e "${RED}Bot 启动失败，请检查日志文件。${NC}"
+# 检查是否安装了zip
+check_zip() {
+    if ! command -v zip &> /dev/null; then
+        echo -e "${RED}zip未安装，正在安装...${NC}"
+        sudo apt-get update && sudo apt-get install -y zip
     fi
 }
 
-# 优化后的停止函数
-stop() {
-    if ! systemctl is-active --quiet bot.service; then
-        echo -e "${YELLOW}Bot 服务未在运行。${NC}"
-        return
-    fi
-    
-    echo -e "${YELLOW}正在停止 Bot 服务...${NC}"
-    systemctl stop bot.service
-    
-    if wait_for_service_status "inactive"; then
-        echo -e "${GREEN}Bot 服务已停止。${NC}"
-    else
-        echo -e "${RED}服务停止超时，尝试强制停止...${NC}"
-        systemctl kill -s SIGKILL bot.service
-        sleep 1
-        if wait_for_service_status "inactive"; then
-            echo -e "${GREEN}强制停止成功！${NC}"
-        else
-            echo -e "${RED}强制停止失败，请手动检查服务状态。${NC}"
-        fi
-    fi
-}
+# 保存映射关系的文件
+MAPPING_FILE="/opt/crisp_bot/instance_mapping.txt"
 
-# 检查状态函数
-check_status() {
-    if systemctl is-active --quiet bot.service; then
-        echo -e "运行状态：${GREEN}已运行${NC}"
-    else
-        echo -e "运行状态：${RED}未运行${NC}"
-    fi
-}
-
-# 查看日志函数
-view_logs() {
-    echo -e "${YELLOW}正在查看 Bot 日志...${NC}"
-    # 使用 tail -f 实时查看日志
-    sudo journalctl -u $SERVICE_NAME -n 30 -f
-}
-
-# 备选方案：使用 grep 检查配置
-check_and_add_config() {
-    if ! grep -q "^off_duty_reply:" config.yml; then
-        echo -e "${YELLOW}检测到新的配置项: off_duty_reply${NC}"
-        echo -e "请输入下班时的自动回复内容 (直接回车使用默认值):"
-        default_reply="您好，当前为非工作时间。如有紧急事项，请发送邮件至 support@example.com 或在工作时间（周一至周五 9:00-18:00）再次联系我们。"
-        echo -e "默认值: $default_reply"
-        read -r off_duty_reply
-        
-        if [ -z "$off_duty_reply" ]; then
-            off_duty_reply="$default_reply"
-        fi
-        
-        echo -e "\n# 下班自动回复内容\noff_duty_reply: \"$off_duty_reply\"" >> config.yml
-        echo -e "${GREEN}已添加下班回复配置${NC}"
-    fi
-}
-
-# 更新函数
-update() {
-    echo -e "${YELLOW}正在更新 Telegram Bot...${NC}"
-    
-    # 进入目标目录
-    cd "$BOT_DIR" || exit
-    
-    # 备份当前配置
-    cp config.yml config.yml.bak
-    
-    # 添加重试机制
-    max_retries=3
-    retry_count=0
-    while [ $retry_count -lt $max_retries ]; do
-        echo -e "${YELLOW}尝试拉取更新 (${retry_count}/${max_retries})${NC}"
-        
-        # 拉取特定文件
-        git fetch origin main
-        if git checkout origin/main -- bot.py handler.py location_names.py requirements.txt config.yml.example; then
-            echo -e "${GREEN}成功拉取更新${NC}"
-            break
-        else
-            retry_count=$((retry_count + 1))
-            if [ $retry_count -lt $max_retries ]; then
-                echo -e "${YELLOW}拉取失败，等待 5 秒后重试...${NC}"
-                sleep 5
+# 显示所有实例信息
+show_instances() {
+    echo -e "${YELLOW}当前所有Bot实例：${NC}"
+    if [ -f "$MAPPING_FILE" ]; then
+        echo -e "\n编号\t别名\t\t状态"
+        echo "--------------------------------"
+        while IFS=: read -r number alias; do
+            # 检查容器状态
+            container_name="crisp_bot_${number}_${alias}"
+            status=$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null)
+            if [ "$status" = "running" ]; then
+                status_text="${GREEN}运行中${NC}"
+            else
+                status_text="${RED}已停止${NC}"
             fi
-        fi
-    done
+            echo -e "${number}\t${alias}\t\t${status_text}"
+        done < "$MAPPING_FILE"
+        echo "--------------------------------"
+    else
+        echo -e "${YELLOW}暂无Bot实例${NC}"
+    fi
+    echo
+}
+
+# 卸载或迁移bot
+uninstall_or_migrate() {
+    echo -e "${YELLOW}请选择操作：${NC}"
+    echo -e "1. 卸载Bot"
+    echo -e "2. 迁移备份"
+    echo -e "0. 返回"
+    read -p "请选择 [0-2]: " operation
+
+    case $operation in
+        1)
+            echo -e "${YELLOW}警告：这将删除所有bot实例和相关数据！${NC}"
+            echo -e "${YELLOW}请输入 'YES' 确认卸载：${NC}"
+            read confirm
+            
+            if [ "$confirm" = "YES" ]; then
+                # 停止并删除所有容器
+                docker-compose down
+                
+                # 删除所有相关文件
+                rm -f docker-compose.yml
+                # 询问是否删除配置文件
+                echo -e "${YELLOW}是否删除所有配置文件和数据？[y/N]${NC}"
+                read delete_data
+                if [[ $delete_data =~ ^[Yy]$ ]]; then
+                    # 获取当前时间作为备份文件名
+                    backup_time=$(date +"%Y%m%d_%H%M%S")
+                    backup_file="crisp_bot_backup_${backup_time}.zip"
+                    
+                    # 创建备份
+                    echo -e "${YELLOW}正在创建备份...${NC}"
+                    if sudo zip -r "$backup_file" /opt/crisp_bot/ > /dev/null 2>&1; then
+                        echo -e "${GREEN}备份已保存为: ${backup_file}${NC}"
+                    else
+                        echo -e "${RED}备份创建失败${NC}"
+                        echo -e "${YELLOW}是否继续删除？[y/N]${NC}"
+                        read continue_delete
+                        if [[ ! $continue_delete =~ ^[Yy]$ ]]; then
+                            echo -e "${YELLOW}取消卸载${NC}"
+                            return 1
+                        fi
+                    fi
+                    
+                    sudo rm -rf /opt/crisp_bot
+                    echo -e "${GREEN}已删除所有配置文件和数据${NC}"
+                fi
+                
+                # 删除Docker镜像
+                docker rmi $(docker images | grep "crisp_bot" | awk '{print $3}') 2>/dev/null
+                
+                # 重新创建 docker-compose.yml
+                echo "version: '3'" > docker-compose.yml
+                echo "" >> docker-compose.yml
+                echo "services:" >> docker-compose.yml
+                echo -e "${GREEN}已重新创建 docker-compose.yml${NC}"
+                
+                echo -e "${GREEN}已完全卸载所有bot实例和相关数据${NC}"
+                echo -e "${YELLOW}配置文件模板（config.yml.example）和脚本文件已保留${NC}"
+                
+                # 询问是否退出脚本
+                echo -e "${YELLOW}是否要退出管理脚本？[Y/n]${NC}"
+                read exit_choice
+                if [[ $exit_choice =~ ^[Nn]$ ]]; then
+                    return 0
+                else
+                    exit 0
+                fi
+            else
+                echo -e "${YELLOW}取消卸载${NC}"
+            fi
+            ;;
+        2)
+            # 创建迁移备份
+            backup_time=$(date +"%Y%m%d_%H%M%S")
+            backup_file="crisp_bot_backup_${backup_time}.zip"
+            
+            echo -e "${YELLOW}正在创建迁移备份...${NC}"
+            if sudo zip -r "$backup_file" /opt/crisp_bot/ > /dev/null 2>&1; then
+                echo -e "${GREEN}迁移备份已保存为: ${backup_file}${NC}"
+                echo -e "${YELLOW}请将此文件复制到新服务器上使用${NC}"
+            else
+                echo -e "${RED}创建迁移备份失败${NC}"
+            fi
+            ;;
+        0)
+            return 0
+            ;;
+        *)
+            echo -e "${RED}无效的选择${NC}"
+            ;;
+    esac
+}
+
+# 创建新的bot实例
+create_bot() {
+    # 检查目录是否已存在
+    if [ -d "/opt/crisp_bot" ]; then
+        echo -e "${YELLOW}检测到已存在的crisp_bot目录${NC}"
+        echo -e "1. 继续使用现有目录"
+        echo -e "2. 备份并创建新目录"
+        echo -e "0. 取消"
+        read -p "请选择 [0-2]: " dir_choice
+        
+        case $dir_choice in
+            1)
+                echo -e "${YELLOW}将在现有目录中创建新实例${NC}"
+                ;;
+            2)
+                backup_time=$(date +"%Y%m%d_%H%M%S")
+                backup_dir="/opt/crisp_bot_backup_${backup_time}"
+                echo -e "${YELLOW}正在备份现有目录到 ${backup_dir}${NC}"
+                sudo mv /opt/crisp_bot "$backup_dir"
+                ;;
+            *)
+                echo -e "${YELLOW}操作已取消${NC}"
+                return 1
+                ;;
+        esac
+    fi
     
-    if [ $retry_count -eq $max_retries ]; then
-        echo -e "${RED}更新失败，请稍后重试${NC}"
+    echo -e "${YELLOW}请输入新bot的编号（例如：3）：${NC}"
+    read bot_number
+    
+    # 检查是否已存在相同编号的bot
+    if grep -q "bot${bot_number}:" docker-compose.yml; then
+        echo -e "${RED}编号 ${bot_number} 的bot已存在，请使用其他编号${NC}"
         return 1
     fi
+    
+    echo -e "${YELLOW}请输入bot的别名（例如：us-bot）：${NC}"
+    read bot_alias
+    
+    # 保存编号和别名的映射关系
+    sudo mkdir -p "$(dirname "$MAPPING_FILE")"
+    echo "${bot_number}:${bot_alias}" | sudo tee -a "$MAPPING_FILE" > /dev/null
 
-    # 检查并更新配置文件
-    check_and_add_config
+    # 在 /opt 下创建独立文件夹
+    sudo mkdir -p "/opt/crisp_bot/${bot_alias}"
     
-    echo -e "${GREEN}拉取更新成功${NC}"
-    echo -e "${YELLOW}正在重启应用bot......${NC}"
+    # 复制配置文件
+    sudo cp config.yml.example "/opt/crisp_bot/${bot_alias}/config.yml"
+    sudo mkdir -p "/opt/crisp_bot/${bot_alias}/data"
+    # 创建空的session_mapping文件
+    sudo touch "/opt/crisp_bot/${bot_alias}/session_mapping.yml"
+    # 设置适当的权限
+    sudo chmod -R 777 "/opt/crisp_bot/${bot_alias}"
     
-    # 重启服务
-    systemctl daemon-reload
-    systemctl kill -s SIGKILL bot.service 2>/dev/null
-    sleep 0.5
-    systemctl start bot.service
+    echo -e "${GREEN}已在 /opt/crisp_bot/${bot_alias} 创建配置文件${NC}"
+    echo -e "${YELLOW}请编辑配置文件后再启动服务${NC}"
     
-    if wait_for_service_status "active"; then
-        echo -e "${GREEN}Bot 已成功重启！${NC}"
-    else
-        echo -e "${RED}Bot 启动失败，请检查日志文件。${NC}"
+    # 检查docker-compose.yml是否以换行符结尾
+    if [ -f docker-compose.yml ] && [ -s docker-compose.yml ]; then
+        last_char=$(tail -c1 docker-compose.yml)
+        if [ "$last_char" != "" ]; then
+            echo "" >> docker-compose.yml
+        fi
     fi
     
-    echo -e "${GREEN}更新完成${NC}"
+    # 添加到docker-compose.yml
+    cat >> docker-compose.yml <<EOL
+
+  bot${bot_number}:
+    build: .
+    container_name: crisp_bot_${bot_number}_${bot_alias}
+    restart: unless-stopped
+    volumes:
+      - /opt/crisp_bot/${bot_alias}/config.yml:/app/config.yml
+      - /opt/crisp_bot/${bot_alias}/data:/app/data
+      - /opt/crisp_bot/${bot_alias}/session_mapping.yml:/app/session_mapping.yml
+    environment:
+      - TZ=Asia/Shanghai
+EOL
+
+    echo -e "${GREEN}已将 bot${bot_number} 添加到 docker-compose.yml${NC}"
+    
+    echo -e "${YELLOW}是否要立即构建并启动新的bot实例？[Y/n]${NC}"
+    read start_choice
+    if [[ ! $start_choice =~ ^[Nn]$ ]]; then
+        docker-compose up -d "bot${bot_number}"
+        echo -e "${GREEN}Bot ${bot_number} 已启动${NC}"
+    else
+        echo -e "${YELLOW}Bot ${bot_number} 已创建但未启动，您可以稍后使用选项2或在编辑配置后再启动${NC}"
+    fi
 }
 
-# 添加进程状态检查函数
-is_running() {
-    pgrep -f "python3.*bot.py" >/dev/null
-    return $?
+# 启动所有bot
+start_all() {
+    docker-compose up -d
+    echo -e "${GREEN}所有bot已启动${NC}"
+}
+
+# 停止所有bot
+stop_all() {
+    docker-compose down
+    echo -e "${GREEN}所有bot已停止${NC}"
+}
+
+# 停止指定bot
+stop_bot() {
+    show_instances
+    echo -e "${YELLOW}请输入要停止的bot编号：${NC}"
+    read bot_number
+    docker-compose stop "bot${bot_number}"
+    echo -e "${GREEN}Bot ${bot_number} 已停止${NC}"
+}
+
+# 重启指定bot
+restart_bot() {
+    show_instances
+    echo -e "${YELLOW}请输入要重启的bot编号：${NC}"
+    read bot_number
+    docker-compose restart "bot${bot_number}"
+    echo -e "${GREEN}Bot ${bot_number} 已重启${NC}"
+}
+
+# 查看日志
+view_logs() {
+    show_instances
+    echo -e "${YELLOW}请输入要查看日志的bot编号（输入0查看所有）：${NC}"
+    read bot_number
+    if [ "$bot_number" = "0" ]; then
+        docker-compose logs -f
+    else
+        docker-compose logs -f "bot${bot_number}"
+    fi
+}
+
+# 更新bot
+update_bot() {
+    echo -e "${YELLOW}正在更新Bot...${NC}"
+    
+    # 保存当前目录
+    current_dir=$(pwd)
+    
+    # 检查是否有本地修改
+    if [ -n "$(git status --porcelain)" ]; then
+        echo -e "${YELLOW}检测到本地文件有修改。${NC}"
+        echo -e "${YELLOW}1. 保存本地修改（stash）${NC}"
+        echo -e "${YELLOW}2. 放弃本地修改${NC}"
+        echo -e "${YELLOW}3. 取消更新${NC}"
+        read -p "请选择操作 [1-3]: " stash_choice
+        
+        case $stash_choice in
+            1)
+                git stash
+                echo -e "${GREEN}已保存本地修改${NC}"
+                ;;
+            2)
+                git checkout -- .
+                echo -e "${GREEN}已放弃本地修改${NC}"
+                ;;
+            3)
+                echo -e "${YELLOW}取消更新${NC}"
+                return 1
+                ;;
+            *)
+                echo -e "${RED}无效的选择${NC}"
+                return 1
+                ;;
+        esac
+    fi
+    
+    # 拉取最新代码
+    git pull
+    
+    if [ $? -eq 0 ]; then
+        # 如果之前有保存的修改，尝试恢复
+        if [ "$stash_choice" = "1" ]; then
+            if git stash pop; then
+                echo -e "${GREEN}已恢复本地修改${NC}"
+            else
+                echo -e "${RED}恢复本地修改时发生冲突，请手动解决${NC}"
+                return 1
+            fi
+        fi
+    
+        # 重新构建所有容器
+        docker-compose build
+        
+        echo -e "${YELLOW}是否要重启所有Bot实例？[y/N]${NC}"
+        read restart_choice
+        if [[ $restart_choice =~ ^[Yy]$ ]]; then
+            docker-compose up -d
+            echo -e "${GREEN}所有Bot已更新并重启${NC}"
+        else
+            echo -e "${YELLOW}Bot已更新，但未重启。请在需要时手动重启。${NC}"
+        fi
+    else
+        echo -e "${RED}更新失败，请检查网络连接或代码仓库状态${NC}"
+    fi
+
+    chmod +x docker-bot.sh
+    
 }
 
 # 主菜单
 show_menu() {
-    echo "============================================"
-    echo "    Crisp for Telegram Bot 管理菜单"
-    echo "============================================"
+    echo "===================================="
+    echo "    Crisp Telegram Bot 管理面板"
+    echo "===================================="
+    show_instances
     echo ""
-    echo "1. 安装 crispBot"
+    echo "1. 创建新的bot实例"
     echo ""
-    echo "2. 启动 Bot "
+    echo "2. 启动所有bot"
     echo ""
-    echo "3. 重启 Bot "
+    echo "3. 停止所有bot"
     echo ""
-    echo "4. 停止 Bot "
+    echo "4. 停止指定bot"
     echo ""
-    echo "5. 查看 Bot 日志"
+    echo "5. 重启指定bot"
     echo ""
-    echo "6. 卸载 crispBot"
+    echo "6. 查看bot日志"
     echo ""
-    echo "7. 更新 crispBot"
+    echo "7. 更新Bot"
     echo ""
-    echo "0. 退出脚本"
+    echo "8. 卸载或迁移"
     echo ""
-    echo "============================================"
-    check_status
-    echo "============================================"
-    echo "若config.yml配置没有填写,状态也会为显示"已运行""
-    echo "安装完成后请自行测试功能是否正常"
-    echo "你可以随时使用crispbot唤起本菜单"
-    echo "============================================"
+    echo "0. 退出"
+    echo "===================================="
 }
 
-# 主循环
-while true; do
-    show_menu
-    echo -e "${YELLOW}请选择操作 [1-6]: ${NC}"
-    read -n 1 -s choice
-    echo  # 打印一个换行
-    case $choice in
-        1)
-            install
-            ;;
-        2)
-            start
-            ;;
-        3)
-            restart
-            ;;
-        4)
-            stop
-            ;;
-        5)
-            view_logs
-            echo -e "${YELLOW}按任意键返回主菜单...${NC}"
-            read -n 1 -s
-            ;;
-        6)
-            uninstall
-            ;;
-        7)
-            update
-            ;;
-        0)
-            echo -e "${GREEN}感谢使用，再见！${NC}"
-            exit 0
-            ;;
-        *)
-            echo -e "${RED}无效选项，请重新选择${NC}"
-            sleep 2
-            ;;
-    esac
-done
+# 主程序
+main() {
+    check_sudo
+    check_docker
+    check_zip
+    create_symlink
+    
+    # 检查 docker-compose.yml 是否存在
+    if [ ! -f docker-compose.yml ]; then
+        # 创建新的 docker-compose.yml
+        echo "version: '3'" > docker-compose.yml
+        echo "" >> docker-compose.yml
+        echo "services:" >> docker-compose.yml
+        echo -e "${GREEN}已创建 docker-compose.yml${NC}"
+    fi
+    
+    while true; do
+        show_menu
+        read -p "请选择操作 [0-8]: " choice
+        case $choice in
+            1) create_bot ;;
+            2) start_all ;;
+            3) stop_all ;;
+            4) stop_bot ;;
+            5) restart_bot ;;
+            6) view_logs ;;
+            7) update_bot ;;
+            8) uninstall_or_migrate ;;
+            0) exit 0 ;;
+            *) echo -e "${RED}无效的选择${NC}" ;;
+        esac
+        echo
+        read -p "按回车键继续..."
+    done
+}
+
+main 
