@@ -21,8 +21,6 @@ import telegram  # 添加这行在文件开头
 import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import tempfile
-from pydub import AudioSegment
 
 
 
@@ -512,7 +510,7 @@ async def sendMessage(data):
         sessionId = data["session_id"]
         session = botData.get(sessionId)
 
-        # 使用带重试的会话对象
+        # 标记消息已读
         try:
             client.website.mark_messages_read_in_conversation(
                 websiteId, 
@@ -525,22 +523,6 @@ async def sendMessage(data):
             )
         except Exception as e:
             logging.error(f"标记消息已读失败: {str(e)}")
-            # 失败后等待短暂时间再重试
-            await asyncio.sleep(1)
-            try:
-                client.website.mark_messages_read_in_conversation(
-                    websiteId, 
-                    sessionId,
-                    {
-                        "from": "user", 
-                        "origin": "chat", 
-                        "fingerprints": [data["fingerprint"]]
-                    }
-                )
-            except Exception as retry_error:
-                logging.error(f"重试标记消息已读仍然失败: {str(retry_error)}")
-                # 继续执行，不影响其他功能
-                pass
 
         if data["type"] == "text":
             # 检查消息内容是否为 111 或 222
@@ -622,99 +604,68 @@ async def sendMessage(data):
         elif data["type"] == "file":
             content = data.get("content", {})
             file_type = content.get("type", "")
+            file_url = content.get("url", "")
             
-            # 处理音频文件 str(file_type).count("video") > 0:
-            if str(file_type).count("audio") > 0:
-                try:
-                    response = requests.get(content['url'], timeout=30)
-                    response.raise_for_status()
-                    
-                    # 创建临时文件来处理音频
-                    with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_in:
-                        temp_in.write(response.content)
-                        temp_in_path = temp_in.name
-
-                    with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_out:
-                        temp_out_path = temp_out.name
-
-                    try:
-                        # 转换音频格式
-                        audio = AudioSegment.from_file(temp_in_path)
-                        audio.export(temp_out_path, format='ogg')
-
-                        # 读取转换后的文件
-                        with open(temp_out_path, 'rb') as audio_file:
-                            converted_audio = audio_file.read()
-
-                        # 发送转换后的音频
-                        await bot.send_voice(
-                            chat_id=groupId,
-                            voice=converted_audio,
-                            caption="🎤 用户发送的语音",
-                            duration=content.get('duration'),
-                            message_thread_id=session["topicId"]
-                        )
-                    finally:
-                        # 清理临时文件
-                        os.unlink(temp_in_path)
-                        os.unlink(temp_out_path)
-                    return
-                except Exception as e:
-                    logging.error(f"处理音频失败: {str(e)}")
-                    await bot.send_message(
-                        chat_id=groupId,
-                        text=f"🎵 无法发送音频，请通过链接下载：\n{content['url']}",
-                        message_thread_id=session["topicId"]
-                    )
-                    return
-            
-            # 处理视频文件
-            elif str(file_type).count("video") > 0:
-                try:
-                    response = requests.get(content['url'], timeout=30)
-                    response.raise_for_status()
-                    
-                    # 发送视频
-                    await bot.send_video(
-                        chat_id=groupId,
-                        video=response.content,
-                        caption="📹 用户发送的视频",
-                        message_thread_id=session["topicId"]
-                    )
-                    return
-                except Exception as e:
-                    logging.error(f"处理视频失败: {str(e)}")
-                    await bot.send_message(
-                        chat_id=groupId,
-                        text=f"📹 无法发送视频，请通过链接下载：\n{content['url']}",
-                        message_thread_id=session["topicId"]
-                    )
-                    return
-            
-            # 处理图片（保持原有图片处理代码不变）
-            elif str(file_type).count("image") > 0:
+            if "image" in file_type:
+                # 原有的图片处理逻辑保持不变
                 flow = []
-                flow.append(f"📷 图片链接：{content['url']}")
+                flow.append(f"📷 图片链接：{file_url}")
                 await bot.send_photo(
                     groupId,
-                    content['url'],
+                    file_url,
                     caption='\n'.join(flow),
                     parse_mode='HTML',
                     message_thread_id=session["topicId"]
                 )
+                
+            elif "audio" in file_type:
+                # 处理音频文件
+                flow = []
+                flow.append(f"🎵 用户发送了一段语音")
+                try:
+                    await bot.send_audio(
+                        groupId,
+                        file_url,
+                        caption='\n'.join(flow),
+                        parse_mode='HTML',
+                        message_thread_id=session["topicId"]
+                    )
+                except Exception as e:
+                    logging.error(f"发送音频失败: {str(e)}")
+                    # 如果发送失败,至少发送链接
+                    flow.append(f"🔗 语音链接: {file_url}")
+                    await bot.send_message(
+                        groupId,
+                        '\n'.join(flow),
+                        message_thread_id=session["topicId"]
+                    )
+                    
+            elif "video" in file_type:
+                # 处理视频文件
+                flow = []
+                flow.append(f"🎬 用户发送了一段视频")
+                try:
+                    await bot.send_video(
+                        groupId,
+                        file_url,
+                        caption='\n'.join(flow),
+                        parse_mode='HTML',
+                        message_thread_id=session["topicId"]
+                    )
+                except Exception as e:
+                    logging.error(f"发送视频失败: {str(e)}")
+                    # 如果发送失败,至少发送链接
+                    flow.append(f"🔗 视频链接: {file_url}")
+                    await bot.send_message(
+                        groupId,
+                        '\n'.join(flow),
+                        message_thread_id=session["topicId"]
+                    )
         else:
-            print("Unhandled Message Type : ", data["type"])
+            logging.info(f"未处理的消息类型: {data['type']}")
+
     except Exception as error:
-        logging.error(f"发送消息时出错: {str(error)}")
-        # 如果是网络错误，等待后重试
-        if isinstance(error, requests.exceptions.ConnectionError):
-            await asyncio.sleep(2)
-            try:
-                # 重试一次
-                return await sendMessage(data)
-            except Exception as retry_error:
-                logging.error(f"重试发送消息失败: {str(retry_error)}")
-        # 继续执行，确保其他功能不受影响
+        logging.error(f"发送消息失败: {str(error)}")
 
 # Def Event Handlers
 @sio.on("connect")
