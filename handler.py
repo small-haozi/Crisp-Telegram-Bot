@@ -21,10 +21,6 @@ import telegram  # 添加这行在文件开头
 import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from urllib.parse import urlparse
-import mimetypes
-import tempfile
-from pydub import AudioSegment
 
 
 
@@ -383,7 +379,6 @@ async def createSession(data):
         print(f"获取到的元信息: {metas}")
 
         if session is None:
-            logging.info(f"创建新会话: {session_id}")
             enableAI = False if openai is None else True
             # 创建新话题
             topic = await bot.create_forum_topic(
@@ -392,7 +387,7 @@ async def createSession(data):
                 icon_color=0x6FB9F0
             )
             
-            # 发送元信息消息 - 这条消息会自动成为话题中的第一条消息，并自动置顶
+            # 发送元信息消息
             msg = await bot.send_message(
                 groupId,
                 metas,
@@ -413,11 +408,10 @@ async def createSession(data):
                 'topicId': topic.message_thread_id,
                 'messageId': msg.message_id,
                 'enableAI': enableAI,
-                'first_message': True
+                'first_message': True  # 新会话设置为 True
             }
-            logging.info(f"已创建话题 {topic.message_thread_id} 并保存映射")
+
         else:
-            logging.info(f"使用现有会话: {session_id}, 话题ID: {session.get('topicId')}")
             try:
                 # 尝试更新现有消息
                 await bot.edit_message_text(
@@ -439,18 +433,6 @@ async def createSession(data):
                             reply_markup=changeButton(session_id, session.get("enableAI", False)),
                             parse_mode='MarkdownV2'
                         )
-                        # 将新消息置顶 - 需要指定 message_thread_id
-                        try:
-                            await bot.pin_chat_message(
-                                chat_id=groupId,
-                                message_id=msg.message_id,
-                                message_thread_id=session['topicId'],  # 添加话题ID
-                                disable_notification=True
-                            )
-                            logging.info(f"已将新消息 {msg.message_id} 置顶到话题 {session['topicId']}")
-                        except Exception as pin_error:
-                            logging.error(f"置顶新消息失败: {str(pin_error)}")
-                            
                         # 更新消息ID
                         session['messageId'] = msg.message_id
                         # 更新映射
@@ -528,129 +510,139 @@ async def sendMessage(data):
         sessionId = data["session_id"]
         session = botData.get(sessionId)
 
-        if not session:
-            logging.error(f"找不到会话: {sessionId}")
-            return
+        # 使用带重试的会话对象
+        try:
+            client.website.mark_messages_read_in_conversation(
+                websiteId, 
+                sessionId,
+                {
+                    "from": "user", 
+                    "origin": "chat", 
+                    "fingerprints": [data["fingerprint"]]
+                }
+            )
+        except Exception as e:
+            logging.error(f"标记消息已读失败: {str(e)}")
+            # 失败后等待短暂时间再重试
+            await asyncio.sleep(1)
+            try:
+                client.website.mark_messages_read_in_conversation(
+                    websiteId, 
+                    sessionId,
+                    {
+                        "from": "user", 
+                        "origin": "chat", 
+                        "fingerprints": [data["fingerprint"]]
+                    }
+                )
+            except Exception as retry_error:
+                logging.error(f"重试标记消息已读仍然失败: {str(retry_error)}")
+                # 继续执行，不影响其他功能
+                pass
+
+        if data["type"] == "text":
+            # 检查消息内容是否为 111 或 222
+            if data["content"] == '111' or data["content"] == '222':
+                session["enableAI"] = (data["content"] == '222')
+                await bot.edit_message_reply_markup(
+                    chat_id=groupId,
+                    message_id=session['messageId'],
+                    reply_markup=changeButton(sessionId, session["enableAI"])
+                )
+                # 发送提示消息给对方
+                message_content = "AI客服已关闭" if data["content"] == '111' else "AI客服已开启"
+                query = {
+                    "type": "text",
+                    "content": message_content,
+                    "from": "operator",
+                    "origin": "chat",
+                    "user": {
+                        "nickname": nicknames.get('system_message', '系统消息'),
+                        "avatar": avatars.get('system_message', 'https://example.com/system_avatar.png')
+                    }
+                }
+                client.website.send_message_in_conversation(websiteId, sessionId, query)
+                return
+
             
-        if 'topicId' not in session:
-            logging.error(f"会话中没有话题ID: {sessionId}")
-            return
+            flow = []
+            flow.append(f"🧾<b>消息推送</b>： {data['content']}")
 
-        logging.info(f"准备发送消息到话题 {session['topicId']}")
+            # 仅在会话的第一条消息时发送提示
+            if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
+                session["first_message"] = False  # 标记为已发送提示
+                hint_message = "您已接入智能客服 \n\n您可以输入 '111' 关闭AI客服，输入 '222' 开启AI客服。"
+                hint_query = {
+                    "type": "text",
+                    "content": hint_message,
+                    "from": "operator",
+                    "origin": "chat",
+                    "user": {
+                        "nickname": nicknames.get('system_message', '系统消息'),
+                        "avatar": avatars.get('system_message', 'https://example.com/system_avatar.png')
+                    }
+                }
+                client.website.send_message_in_conversation(websiteId, sessionId, hint_query)  # 发送提示消息
 
-        content = data.get("content", "")
-        
-        # 处理音频、视频和图片文件
-        if isinstance(content, dict) and 'url' in content and 'type' in content:
-            file_url = content['url']
-            mime_type = content['type']
+            result, autoreply = getKey(data["content"])
+            if result is True:
+                flow.append("")
+                flow.append(f"💡<b>自动回复</b>：{autoreply}")
+            elif openai is not None and session["enableAI"] is True:
+                response = openai.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": payload},
+                        {"role": "user", "content": data["content"]}
+                    ]
+                )
+                autoreply = response.choices[0].message.content
+                flow.append("")
+                flow.append(f"💡<b>自动回复</b>：{autoreply}")
             
-            # 处理图片 - 直接使用原始URL
-            if mime_type.startswith('image/'):
-                try:
-                    # 使用 HTML 格式发送图片链接
-                    html_message = f'📷 用户发送的图片：\n<a href="{file_url}">点击查看图片</a>'
-                    await bot.send_message(
-                        chat_id=groupId,
-                        text=html_message,
-                        message_thread_id=session["topicId"],
-                        parse_mode='HTML'
-                    )
-                    return
-                except Exception as e:
-                    logging.error(f"发送图片消息失败: {str(e)}")
-                    # 如果发送失败，继续使用默认文本格式
-            
-            # 处理音频和视频
-            elif mime_type.startswith(('audio/', 'video/')):
-                duration = content.get('duration')
-                logging.info(f"检测到媒体文件，URL: {file_url}, MIME类型: {mime_type}")
-                
-                try:
-                    # 下载文件
-                    response = requests.get(file_url, timeout=30)
-                    response.raise_for_status()
-                    file_content = response.content
-                    
-                    # 处理音频文件
-                    if mime_type.startswith('audio/'):
-                        try:
-                            # 创建临时文件来处理音频
-                            with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_in:
-                                temp_in.write(file_content)
-                                temp_in_path = temp_in.name
+            if autoreply is not None:
+                query = {
+                    "type": "text",
+                    "content": autoreply,
+                    "from": "operator",
+                    "origin": "chat",
+                    "user": {
+                        "nickname": nicknames.get('ai_agent', 'AI客服'),
+                        "avatar": avatars.get('ai_agent', 'https://img.ixintu.com/download/jpg/20210125/8bff784c4e309db867d43785efde1daf_512_512.jpg')
+                    }
+                }
+                client.website.send_message_in_conversation(websiteId, sessionId, query)
+            await bot.send_message(
+                groupId,
+                '\n'.join(flow),
+                message_thread_id=session["topicId"]
+            )
+        elif data["type"] == "file" and str(data["content"]["type"]).count("image") > 0:
+            # 处理从 Crisp 接收到的图片
+            flow = []
+            flow.append(f"📷 图片链接：{data['content']['url']}")
 
-                            with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_out:
-                                temp_out_path = temp_out.name
-
-                            # 转换音频格式
-                            audio = AudioSegment.from_file(temp_in_path)
-                            audio.export(temp_out_path, format='ogg')
-
-                            # 读取转换后的文件
-                            with open(temp_out_path, 'rb') as audio_file:
-                                converted_audio = audio_file.read()
-
-                            # 发送音频
-                            await bot.send_voice(
-                                chat_id=groupId,
-                                voice=converted_audio,
-                                message_thread_id=session["topicId"],
-                                caption="🎤 用户发送的语音",
-                                duration=duration
-                            )
-                            logging.info("音频发送成功")
-                            
-                        except Exception as audio_error:
-                            logging.error(f"处理音频失败: {str(audio_error)}")
-                            await bot.send_message(
-                                chat_id=groupId,
-                                text=f"🎵 无法直接发送音频，请通过链接下载：\n{file_url}",
-                                message_thread_id=session["topicId"]
-                            )
-                        finally:
-                            # 清理临时文件
-                            try:
-                                os.unlink(temp_in_path)
-                                os.unlink(temp_out_path)
-                            except:
-                                pass
-                    
-                    # 处理视频文件
-                    elif mime_type.startswith('video/'):
-                        await bot.send_video(
-                            chat_id=groupId,
-                            video=file_content,
-                            message_thread_id=session["topicId"],
-                            caption="📹 用户发送的视频"
-                        )
-                        logging.info("视频发送成功")
-                    
-                    return
-
-                except Exception as e:
-                    logging.error(f"处理媒体文件失败: {str(e)}")
-                    await bot.send_message(
-                        chat_id=groupId,
-                        text=f"📎 文件处理失败，请通过链接下载：\n{file_url}",
-                        message_thread_id=session["topicId"]
-                    )
-                    return
-
-        # 处理其他所有消息类型（文本等）
-        flow = []
-        flow.append(f"🧾<b>消息推送</b>： {data['content']}")
-
-        await bot.send_message(
-            chat_id=groupId,
-            text='\n'.join(flow),
-            message_thread_id=session["topicId"],
-            parse_mode='HTML'
-        )
-        logging.info(f"消息已发送到话题 {session['topicId']}")
-
+            # 发送图片到 Telegram 群组
+            await bot.send_photo(
+                groupId,
+                data['content']['url'],
+                caption='\n'.join(flow),
+                parse_mode='HTML',
+                message_thread_id=session["topicId"]
+            )
+        else:
+            print("Unhandled Message Type : ", data["type"])
     except Exception as error:
-        logging.error(f"处理消息失败: {str(error)}")
+        logging.error(f"发送消息时出错: {str(error)}")
+        # 如果是网络错误，等待后重试
+        if isinstance(error, requests.exceptions.ConnectionError):
+            await asyncio.sleep(2)
+            try:
+                # 重试一次
+                return await sendMessage(data)
+            except Exception as retry_error:
+                logging.error(f"重试发送消息失败: {str(retry_error)}")
+        # 继续执行，确保其他功能不受影响
 
 # Def Event Handlers
 @sio.on("connect")
