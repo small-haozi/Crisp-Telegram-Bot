@@ -21,6 +21,8 @@ import telegram  # 添加这行在文件开头
 import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import tempfile
+from pydub import AudioSegment
 
 
 
@@ -524,17 +526,20 @@ async def sendMessage(data):
         except Exception as e:
             logging.error(f"标记消息已读失败: {str(e)}")
 
-        if data["type"] == "text":
+        message_type = data.get("type", "")
+        content = data.get("content", {})
+
+        if message_type == "text":
             # 检查消息内容是否为 111 或 222
-            if data["content"] == '111' or data["content"] == '222':
-                session["enableAI"] = (data["content"] == '222')
+            if content == '111' or content == '222':
+                session["enableAI"] = (content == '222')
                 await bot.edit_message_reply_markup(
                     chat_id=groupId,
                     message_id=session['messageId'],
                     reply_markup=changeButton(sessionId, session["enableAI"])
                 )
                 # 发送提示消息给对方
-                message_content = "AI客服已关闭" if data["content"] == '111' else "AI客服已开启"
+                message_content = "AI客服已关闭" if content == '111' else "AI客服已开启"
                 query = {
                     "type": "text",
                     "content": message_content,
@@ -550,7 +555,7 @@ async def sendMessage(data):
 
             
             flow = []
-            flow.append(f"🧾<b>消息推送</b>： {data['content']}")
+            flow.append(f"🧾<b>消息推送</b>： {content}")
 
             # 仅在会话的第一条消息时发送提示
             if openai is not None and session.get("first_message", True):  # 检查是否是会话的第一条消息
@@ -568,7 +573,7 @@ async def sendMessage(data):
                 }
                 client.website.send_message_in_conversation(websiteId, sessionId, hint_query)  # 发送提示消息
 
-            result, autoreply = getKey(data["content"])
+            result, autoreply = getKey(content)
             if result is True:
                 flow.append("")
                 flow.append(f"💡<b>自动回复</b>：{autoreply}")
@@ -577,7 +582,7 @@ async def sendMessage(data):
                     model="gpt-3.5-turbo",
                     messages=[
                         {"role": "system", "content": payload},
-                        {"role": "user", "content": data["content"]}
+                        {"role": "user", "content": content}
                     ]
                 )
                 autoreply = response.choices[0].message.content
@@ -601,13 +606,12 @@ async def sendMessage(data):
                 '\n'.join(flow),
                 message_thread_id=session["topicId"]
             )
-        elif data["type"] == "file":
-            content = data.get("content", {})
+        elif message_type == "file" and isinstance(content, dict):
             file_type = content.get("type", "")
             file_url = content.get("url", "")
             
             if "image" in file_type:
-                # 原有的图片处理逻辑保持不变
+                # 处理图片
                 flow = []
                 flow.append(f"📷 图片链接：{file_url}")
                 await bot.send_photo(
@@ -618,30 +622,8 @@ async def sendMessage(data):
                     message_thread_id=session["topicId"]
                 )
                 
-            elif "audio" in file_type:
-                # 处理音频文件
-                flow = []
-                flow.append(f"🎵 用户发送了一段语音")
-                try:
-                    await bot.send_audio(
-                        groupId,
-                        file_url,
-                        caption='\n'.join(flow),
-                        parse_mode='HTML',
-                        message_thread_id=session["topicId"]
-                    )
-                except Exception as e:
-                    logging.error(f"发送音频失败: {str(e)}")
-                    # 如果发送失败,至少发送链接
-                    flow.append(f"🔗 语音链接: {file_url}")
-                    await bot.send_message(
-                        groupId,
-                        '\n'.join(flow),
-                        message_thread_id=session["topicId"]
-                    )
-                    
             elif "video" in file_type:
-                # 处理视频文件
+                # 处理视频
                 flow = []
                 flow.append(f"🎬 用户发送了一段视频")
                 try:
@@ -654,15 +636,71 @@ async def sendMessage(data):
                     )
                 except Exception as e:
                     logging.error(f"发送视频失败: {str(e)}")
-                    # 如果发送失败,至少发送链接
                     flow.append(f"🔗 视频链接: {file_url}")
                     await bot.send_message(
                         groupId,
                         '\n'.join(flow),
                         message_thread_id=session["topicId"]
                     )
+        elif message_type == "audio" and isinstance(content, dict):
+            # 处理音频消息
+            file_url = content.get("url")
+            duration = content.get("duration")
+            
+            if file_url:
+                flow = []
+                flow.append(f"🎵 用户发送了一段语音")
+                try:
+                    # 下载音频文件
+                    response = requests.get(file_url, timeout=30)
+                    if response.status_code == 200:
+                        # 创建临时文件
+                        with tempfile.NamedTemporaryFile(suffix='.weba', delete=False) as temp_in:
+                            temp_in.write(response.content)
+                            temp_in_path = temp_in.name
+
+                        with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_out:
+                            temp_out_path = temp_out.name
+
+                        try:
+                            # 转换音频格式
+                            audio = AudioSegment.from_file(temp_in_path)
+                            audio.export(temp_out_path, format='ogg')
+
+                            # 读取转换后的文件
+                            with open(temp_out_path, 'rb') as audio_file:
+                                await bot.send_voice(
+                                    groupId,
+                                    audio_file,
+                                    caption='\n'.join(flow),
+                                    duration=duration,
+                                    parse_mode='HTML',
+                                    message_thread_id=session["topicId"]
+                                )
+                            logging.info("语音发送成功")
+                        except Exception as convert_error:
+                            logging.error(f"音频转换失败: {str(convert_error)}")
+                            raise convert_error
+                        finally:
+                            # 清理临时文件
+                            try:
+                                os.unlink(temp_in_path)
+                                os.unlink(temp_out_path)
+                            except:
+                                pass
+                    else:
+                        raise Exception(f"下载音频失败，状态码: {response.status_code}")
+
+                except Exception as e:
+                    logging.error(f"发送语音失败: {str(e)}")
+                    flow.append(f"🔗 语音链接: {file_url}")
+                    await bot.send_message(
+                        groupId,
+                        '\n'.join(flow),
+                        message_thread_id=session["topicId"]
+                    )
         else:
-            logging.info(f"未处理的消息类型: {data['type']}")
+            logging.info(f"未处理的消息类型: {message_type}, 内容: {content}")
 
     except Exception as error:
         logging.error(f"发送消息失败: {str(error)}")
