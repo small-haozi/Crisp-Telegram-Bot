@@ -623,8 +623,8 @@ async def sendMessage(data):
             content = data.get("content", {})
             file_type = content.get("type", "")
             
-            # 处理音频文件
-            if file_type.startswith('audio/'):
+            # 处理音频文件 str(file_type).count("video") > 0:
+            if str(file_type).count("audio") > 0:
                 try:
                     response = requests.get(content['url'], timeout=30)
                     response.raise_for_status()
@@ -669,7 +669,7 @@ async def sendMessage(data):
                     return
             
             # 处理视频文件
-            elif file_type.startswith('video/'):
+            elif str(file_type).count("video") > 0:
                 try:
                     response = requests.get(content['url'], timeout=30)
                     response.raise_for_status()
