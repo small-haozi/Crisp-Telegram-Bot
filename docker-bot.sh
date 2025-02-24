@@ -414,8 +414,22 @@ show_menu() {
     echo ""
     echo "8. 卸载或迁移"
     echo ""
+    echo "9. 查看资源占用"
+    echo ""
     echo "0. 退出"
     echo "===================================="
+}
+
+# 添加查看资源占用的函数
+show_resources() {
+    echo -e "${YELLOW}容器资源使用情况：${NC}"
+    docker stats --no-stream
+    
+    echo -e "\n${YELLOW}磁盘使用情况：${NC}"
+    docker system df -v
+    
+    echo -e "\n${YELLOW}按回车键返回主菜单...${NC}"
+    read
 }
 
 # 主程序
@@ -436,7 +450,7 @@ main() {
     
     while true; do
         show_menu
-        read -p "请选择操作 [0-8]: " choice
+        read -p "请选择操作 [0-9]: " choice
         case $choice in
             1) create_bot ;;
             2) start_all ;;
@@ -446,6 +460,7 @@ main() {
             6) view_logs ;;
             7) update_bot ;;
             8) uninstall_or_migrate ;;
+            9) show_resources ;;
             0) exit 0 ;;
             *) echo -e "${RED}无效的选择${NC}" ;;
         esac
