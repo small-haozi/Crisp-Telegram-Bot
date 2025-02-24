@@ -21,6 +21,8 @@ import telegram  # 添加这行在文件开头
 import time
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import tempfile
+from pydub import AudioSegment
 
 
 
@@ -617,19 +619,89 @@ async def sendMessage(data):
                 '\n'.join(flow),
                 message_thread_id=session["topicId"]
             )
-        elif data["type"] == "file" and str(data["content"]["type"]).count("image") > 0:
-            # 处理从 Crisp 接收到的图片
-            flow = []
-            flow.append(f"📷 图片链接：{data['content']['url']}")
+        elif data["type"] == "file":
+            content = data.get("content", {})
+            file_type = content.get("type", "")
+            
+            # 处理音频文件
+            if file_type.startswith('audio/'):
+                try:
+                    response = requests.get(content['url'], timeout=30)
+                    response.raise_for_status()
+                    
+                    # 创建临时文件来处理音频
+                    with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_in:
+                        temp_in.write(response.content)
+                        temp_in_path = temp_in.name
 
-            # 发送图片到 Telegram 群组
-            await bot.send_photo(
-                groupId,
-                data['content']['url'],
-                caption='\n'.join(flow),
-                parse_mode='HTML',
-                message_thread_id=session["topicId"]
-            )
+                    with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_out:
+                        temp_out_path = temp_out.name
+
+                    try:
+                        # 转换音频格式
+                        audio = AudioSegment.from_file(temp_in_path)
+                        audio.export(temp_out_path, format='ogg')
+
+                        # 读取转换后的文件
+                        with open(temp_out_path, 'rb') as audio_file:
+                            converted_audio = audio_file.read()
+
+                        # 发送转换后的音频
+                        await bot.send_voice(
+                            chat_id=groupId,
+                            voice=converted_audio,
+                            caption="🎤 用户发送的语音",
+                            duration=content.get('duration'),
+                            message_thread_id=session["topicId"]
+                        )
+                    finally:
+                        # 清理临时文件
+                        os.unlink(temp_in_path)
+                        os.unlink(temp_out_path)
+                    return
+                except Exception as e:
+                    logging.error(f"处理音频失败: {str(e)}")
+                    await bot.send_message(
+                        chat_id=groupId,
+                        text=f"🎵 无法发送音频，请通过链接下载：\n{content['url']}",
+                        message_thread_id=session["topicId"]
+                    )
+                    return
+            
+            # 处理视频文件
+            elif file_type.startswith('video/'):
+                try:
+                    response = requests.get(content['url'], timeout=30)
+                    response.raise_for_status()
+                    
+                    # 发送视频
+                    await bot.send_video(
+                        chat_id=groupId,
+                        video=response.content,
+                        caption="📹 用户发送的视频",
+                        message_thread_id=session["topicId"]
+                    )
+                    return
+                except Exception as e:
+                    logging.error(f"处理视频失败: {str(e)}")
+                    await bot.send_message(
+                        chat_id=groupId,
+                        text=f"📹 无法发送视频，请通过链接下载：\n{content['url']}",
+                        message_thread_id=session["topicId"]
+                    )
+                    return
+            
+            # 处理图片（保持原有图片处理代码不变）
+            elif str(file_type).count("image") > 0:
+                flow = []
+                flow.append(f"📷 图片链接：{content['url']}")
+                await bot.send_photo(
+                    groupId,
+                    content['url'],
+                    caption='\n'.join(flow),
+                    parse_mode='HTML',
+                    message_thread_id=session["topicId"]
+                )
         else:
             print("Unhandled Message Type : ", data["type"])
     except Exception as error:
