@@ -779,20 +779,19 @@ async def connect_error():
 @sio.on("disconnect")
 async def disconnect():
     logging.warning("与 Crisp 服务器断开连接，尝试重新连接...")
-    while True:  # 持续尝试重连
+    retry_count = 0
+    max_retries = 5  # 最大重试次数
+    
+    while retry_count < max_retries:
         try:
-            # 先确保断开现有连接
+            # 检查当前连接状态
             if sio.connected:
+                logging.info("检测到现有连接，先断开...")
                 await sio.disconnect()
-                await asyncio.sleep(1)
             
-            await callbackContext.bot.send_message(
-                groupId,
-                "与 Crisp 服务器断开连接，正在尝试重新连接...",
-            )
+            await asyncio.sleep(5 * (retry_count + 1))  # 递增等待时间
             
             # 尝试重新连接
-            await asyncio.sleep(5)
             await sio.connect(
                 getCrispConnectEndpoints(),
                 transports="websocket",
@@ -800,19 +799,35 @@ async def disconnect():
                 socketio_path="socket.io"
             )
             
-            # 如果连接成功，发送成功消息并退出循环
+            # 连接成功后重新认证
             if sio.connected:
+                await sio.emit("authentication", {
+                    "tier": "plugin",
+                    "username": config["crisp"]["id"],
+                    "password": config["crisp"]["key"],
+                    "events": [
+                        "message:send",
+                        "session:set_data"
+                    ]
+                })
+                logging.info("重新连接成功并完成认证")
                 await callbackContext.bot.send_message(
                     groupId,
                     "已成功重新连接到 Crisp 服务器。",
                 )
                 break
-            
+                
         except Exception as e:
-            logging.error(f"重新连接失败: {str(e)}")
-            await asyncio.sleep(30)  # 失败后等待较长时间再重试
-            continue
-    
+            retry_count += 1
+            logging.error(f"重新连接尝试 {retry_count}/{max_retries} 失败: {str(e)}")
+            if retry_count >= max_retries:
+                logging.error("达到最大重试次数，停止重连")
+                await callbackContext.bot.send_message(
+                    groupId,
+                    "无法重新连接到 Crisp 服务器，请检查网络或手动重启服务。",
+                )
+                break
+
 @sio.on("message:send")
 async def messageForward(data):
     if data["website_id"] != websiteId:

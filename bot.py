@@ -7,6 +7,7 @@ import io
 import signal
 import sys
 import telegram
+import socketio
 
 
 from openai import OpenAI
@@ -61,6 +62,17 @@ except Exception as error:
     logging.warning('无法连接 OpenAI 服务，智能化回复将不会使用')
     logging.error(f"OpenAI 连接错误: {str(error)}")  # 添加详细错误日志
     openai = None
+
+# 修改 socket.io 客户端配置
+sio = socketio.AsyncClient(
+    reconnection=True,
+    reconnection_attempts=5,  # 限制重连次数
+    reconnection_delay=1,     # 初始重连延迟
+    reconnection_delay_max=60,  # 最大重连延迟
+    logger=True,
+    request_timeout=30,       # 请求超时时间
+    handle_sigint=False       # 禁用默认的 SIGINT 处理
+)
 
 def changeButton(conversation_id, boolean, completed=False):
     return InlineKeyboardMarkup(
