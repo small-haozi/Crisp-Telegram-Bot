@@ -22,7 +22,7 @@ chmod +x docker-bot.sh
 ./docker-bot.sh
 ```
 输入1创建bot
-修改目录下的config【编号】【别名】
+修改/opt/crisp/目录下的config【编号】【别名】
 选择是否立刻构建  立即创建yes   
 如果想手动仔细修改后创建选no 则
 ```
